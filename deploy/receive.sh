@@ -29,6 +29,8 @@ previous=$(readlink current || true)
 activate() {
   ln -sfn "$1" .current-next
   mv -Tf .current-next current
+  # A crashing release can exhaust systemd's start limit before rollback.
+  sudo -n /usr/bin/systemctl reset-failed korovany.service
   sudo -n /usr/bin/systemctl restart korovany.service
 }
 healthy() {

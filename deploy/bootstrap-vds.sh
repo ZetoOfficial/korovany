@@ -11,7 +11,7 @@ install -m 644 deploy/korovany.service /etc/systemd/system/korovany.service
 install -m 755 deploy/receive.sh /usr/local/bin/korovany-deploy
 install -d /usr/local/lib
 install -m 755 deploy/unpack.py /usr/local/lib/korovany-unpack.py
-printf '%s\n' 'korovany-deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart korovany.service' > /etc/sudoers.d/korovany
+printf '%s\n' 'korovany-deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart korovany.service, /usr/bin/systemctl reset-failed korovany.service' > /etc/sudoers.d/korovany
 chmod 440 /etc/sudoers.d/korovany
 visudo -cf /etc/sudoers.d/korovany
 install -d -m 700 -o korovany-deploy -g korovany-deploy /home/korovany-deploy/.ssh
