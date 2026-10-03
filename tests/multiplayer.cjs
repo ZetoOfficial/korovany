@@ -41,6 +41,10 @@ async function until(condition, label, timeout = 10000) {
         });
       });
       await page.goto(new URL("arena/", url).href);
+      assert.equal(
+        await page.locator("a").first().getAttribute("href"),
+        new URL(url).pathname,
+      );
       await page.locator("#name").fill(name);
       return { context, page, wire };
     }
@@ -50,6 +54,10 @@ async function until(condition, label, timeout = 10000) {
     await a.page.locator("#create").click();
     await a.page.locator("#hud").waitFor({ state: "visible" });
     const room = await a.page.locator("#room-label").textContent();
+    assert.equal(
+      new URL(a.page.url()).pathname,
+      new URL("arena/", url).pathname,
+    );
     await b.page.locator("#room-code").fill(room);
     await b.page.locator("#join").click();
     await until(
@@ -151,6 +159,10 @@ async function until(condition, label, timeout = 10000) {
     await a.page.locator("#leave").click();
     await a.page.locator("#lobby").waitFor({ state: "visible" });
     assert.equal(new URL(a.page.url()).search, "");
+    assert.equal(
+      new URL(a.page.url()).pathname,
+      new URL("arena/", url).pathname,
+    );
     assert.equal(await a.page.locator("#room-code").inputValue(), "");
     console.log("PASS leaving a room returns to a clean lobby");
     assert.deepEqual(errors, []);

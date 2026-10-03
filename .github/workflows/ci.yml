@@ -1,29 +1,100 @@
-name: Check game
-on: [push, pull_request]
+name: Test and deploy
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        base: ["/", "/korovany/"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: "24"
           cache: npm
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.26.x"
       - run: npm ci
       - run: make check
-      - run: make build
-      - run: npx playwright install --with-deps chromium
-      - name: Campaign regression
+      - name: Build release
+        env:
+          BASE_PATH: ${{ matrix.base }}
         run: |
-          ./bin/korovany > /tmp/korovany.log 2>&1 &
+          npm run build -- --base="$BASE_PATH"
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/ZetoOfficial/korovany/internal/server.BuildRevision=$GITHUB_SHA" -o bin/korovany ./cmd/korovany
+      - run: npx playwright install --with-deps chromium
+      - name: Browser regressions
+        env:
+          BASE_PATH: ${{ matrix.base }}
+        run: |
+          ./bin/korovany -base-path "$BASE_PATH" > /tmp/korovany.log 2>&1 &
           server_pid=$!
-          trap 'kill "$server_pid"' EXIT
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/health; then break; fi
-            sleep 1
-          done
+          trap 'kill "$server_pid"; cat /tmp/korovany.log' EXIT
+          export ASTRA_URL="http://127.0.0.1:8080$BASE_PATH"
+          curl --retry 20 --retry-connrefused --retry-delay 1 --retry-max-time 30 -fsS "${ASTRA_URL}api/health"
           npm run test:campaign
           npm run test:multiplayer
+      - name: Package tested release
+        if: matrix.base == '/korovany/'
+        run: tar -czf korovany-linux-amd64.tar.gz bin/korovany dist
+      - uses: actions/upload-artifact@v4
+        if: matrix.base == '/korovany/'
+        with:
+          name: korovany-linux-amd64
+          path: korovany-linux-amd64.tar.gz
+          retention-days: 14
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://zetoqqq.ru/korovany/
+    concurrency:
+      group: korovany-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: korovany-linux-amd64
+      - name: Skip superseded commits
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'A newer commit is already on master; skipping this deployment.'
+          fi
+      - name: Deploy tested artifact
+        if: steps.latest.outputs.deploy == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/korovany
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/korovany' EXIT
+          ssh -T -i ~/.ssh/korovany -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 korovany-deploy@62.84.101.20 "deploy $GITHUB_SHA" < korovany-linux-amd64.tar.gz
+      - name: Verify public HTTPS route
+        if: steps.latest.outputs.deploy == 'true'
+        run: |
+          curl --retry 5 --retry-delay 2 --fail --silent --show-error --max-time 15 https://zetoqqq.ru/korovany/api/health > health.json
+          python3 -c 'import json,os; data=json.load(open("health.json")); assert data["status"] == "ok" and data["revision"] == os.environ["GITHUB_SHA"], data'
+          curl --fail --silent --show-error --max-time 15 https://zetoqqq.ru/korovany/arena/ > /dev/null

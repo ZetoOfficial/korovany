@@ -4,3 +4,5 @@ bin/
 test-results/
 playwright-report/
 .DS_Store
+korovany-linux-amd64.tar.gz
+__pycache__/

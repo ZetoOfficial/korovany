@@ -44,7 +44,10 @@ export class MatchConnection implements Transport {
       this.retry ? "Возвращаемся в матч…" : "Подключаемся…",
       false,
     );
-    const url = new URL(`/ws/${this.room}`, location.href);
+    const url = new URL(
+      `${import.meta.env.BASE_URL}ws/${this.room}`,
+      location.href,
+    );
     url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const socket = (this.socket = new WebSocket(url));
     this.lastMessage = performance.now();
@@ -136,7 +139,7 @@ export class MatchConnection implements Transport {
 }
 
 export async function createRoom(): Promise<string> {
-  const response = await fetch("/api/rooms", {
+  const response = await fetch(`${import.meta.env.BASE_URL}api/rooms`, {
     method: "POST",
     signal: AbortSignal.timeout(8000),
   });

@@ -15,6 +15,8 @@ check:
 	npm test
 	go test -race ./...
 	go vet ./...
+	python3 -m unittest discover -s deploy -p '*_test.py'
+	bash -n deploy/receive.sh deploy/bootstrap-vds.sh deploy/bootstrap-proxy.sh
 
 test-campaign:
 	npm run test:campaign

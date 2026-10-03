@@ -6,6 +6,9 @@
 
 ## Запуск
 
+Публичная игра: **https://zetoqqq.ru/korovany/** · **[PvP](https://zetoqqq.ru/korovany/arena/)**.
+Деплой и обслуживание: [deploy/README.md](deploy/README.md).
+
 Нужны Go 1.23+ и Node.js 22.12+ (или 24 LTS). Three.js закреплён в `package-lock.json` и входит в сборку: CDN во время игры не требуется.
 
 ```sh

@@ -1,0 +1,32 @@
+[Unit]
+Description=Korovany multiplayer server
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+User=korovany
+Group=korovany
+WorkingDirectory=/srv/korovany/current
+ExecStart=/srv/korovany/current/bin/korovany -addr 127.0.0.1:8090 -base-path /korovany/ -assets /srv/korovany/current/dist
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=512M
+TasksMax=128
+LimitNOFILE=4096
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

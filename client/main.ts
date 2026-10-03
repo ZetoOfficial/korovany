@@ -64,7 +64,7 @@ function leave(message = "Создай комнату или введи код �
   menuOpen = false;
   room = "";
   el<HTMLInputElement>("room-code").value = "";
-  history.replaceState(null, "", "/arena/");
+  history.replaceState(null, "", `${import.meta.env.BASE_URL}arena/`);
   pause.hidden = true;
   lobby.hidden = false;
   hud.hidden = true;
@@ -129,7 +129,11 @@ function welcome(message: Welcome) {
   el("room-label").textContent = room;
   el<HTMLInputElement>("room-code").value = room;
   el("copy-status").textContent = "Пригласи друзей по коду";
-  history.replaceState(null, "", `/arena/?room=${room}`);
+  history.replaceState(
+    null,
+    "",
+    `${import.meta.env.BASE_URL}arena/?room=${room}`,
+  );
   controls.setEnabled(!menuOpen);
 }
 
@@ -194,7 +198,8 @@ el<HTMLInputElement>("low-quality").addEventListener("change", (event) =>
 el("copy-room").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(
-      new URL(`/arena/?room=${room}`, location.href).href,
+      new URL(`${import.meta.env.BASE_URL}arena/?room=${room}`, location.href)
+        .href,
     );
     el("copy-status").textContent = "Приглашение скопировано";
   } catch {

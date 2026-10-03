@@ -22,6 +22,9 @@ import (
 
 const ProtocolVersion = 1
 
+// BuildRevision is set by the release build to identify the running artifact.
+var BuildRevision = "dev"
+
 type Server struct {
 	mu      sync.Mutex
 	rooms   map[string]*room
@@ -51,7 +54,7 @@ func (s *Server) Close() {
 func (s *Server) Handler(assets string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "protocol": ProtocolVersion, "mapVersion": game.LoadWorld().Version})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "protocol": ProtocolVersion, "mapVersion": game.LoadWorld().Version, "revision": BuildRevision})
 	})
 	mux.HandleFunc("POST /api/rooms", s.createRoom)
 	mux.HandleFunc("GET /ws/{room}", s.connect)
