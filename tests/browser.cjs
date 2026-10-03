@@ -128,7 +128,9 @@ const { chromium } = require("playwright");
       const e = a.actors.find((e) => e.id === id);
       a.hurtActor(e, 200, "arm");
     }
-    a.teleport(c.x, c.z + 2);
+    // Select the cart unambiguously: on slower runners its escorts may have
+    // fallen closer to the old approach point, so E would loot a body instead.
+    a.teleport(c.x, c.z);
     a.interact();
     return (
       (alarm && guarded && c.robbed && a.player.robberies === 1) || {
