@@ -24,6 +24,18 @@ async function until(condition, label, timeout = 10000) {
       const context = await browser.newContext({
         viewport: { width: 960, height: 720 },
       });
+      // Exercise the supported drag-look fallback consistently across headless
+      // platforms. Pointer-lock acquisition changes synthetic mouse deltas on
+      // Linux; gameplay and input still go through the actual UI and server.
+      await context.addInitScript(() => {
+        HTMLCanvasElement.prototype.requestPointerLock = () =>
+          Promise.reject(
+            new DOMException(
+              "Pointer lock unavailable in this test",
+              "NotSupportedError",
+            ),
+          );
+      });
       const page = await context.newPage();
       const wire = { id: "", state: null, welcomes: 0, server: null };
       page.on("pageerror", (error) => errors.push(error.message));
