@@ -91,12 +91,14 @@ function receive(next: Snapshot) {
     if (newLife) {
       controls.yaw = player.yaw;
       controls.pitch = player.pitch;
+      controls.weapon = player.weapon;
       controls.clear();
     }
   }
   for (const event of next.events) {
     if (event.id <= lastEvent) continue;
     lastEvent = event.id;
+    if (event.type === "arrow") view.shot(event, self);
     if (event.type === "hit") {
       if (event.actor === self) hitUntil = performance.now() + 170;
       if (event.target === self) damageUntil = performance.now() + 300;
@@ -190,6 +192,15 @@ el<HTMLFormElement>("join-form").addEventListener("submit", (event) => {
   void join(false);
 });
 el("menu-button").addEventListener("click", () => setMenu(true));
+for (const [id, weapon] of [
+  ["weapon-sword", 1],
+  ["weapon-bow", 2],
+] as const) {
+  el(id).addEventListener("click", () => {
+    if (controls.enabled) controls.weapon = weapon;
+    el(id).blur();
+  });
+}
 el("resume").addEventListener("click", () => setMenu(false));
 el("leave").addEventListener("click", () => leave());
 el<HTMLInputElement>("low-quality").addEventListener("change", (event) =>
@@ -233,6 +244,16 @@ function updateHUD(now: number) {
   el("health-text").textContent = `${player.health}`;
   el("health-bar").style.width = `${player.health}%`;
   el("stamina-bar").style.width = `${prediction.player.stamina}%`;
+  const bow = prediction.player.weapon === 2;
+  el("weapon-name").textContent = bow ? "ЛУК" : "КЛИНОК";
+  el("weapon-number").textContent = bow ? "02" : "01";
+  el("weapon-hint").textContent = bow
+    ? "ЛКМ / F · выстрел · 1 — клинок и блок"
+    : "ЛКМ / F · удар · ПКМ / B · блок";
+  el("ammo").textContent =
+    `Стрелы: ${player.arrows} / ${rules.arrows}${bow && player.arrows === 0 ? " · возьми клинок: 1" : ""}`;
+  el("weapon-sword").setAttribute("aria-pressed", String(!bow));
+  el("weapon-bow").setAttribute("aria-pressed", String(bow));
   el("player-count").textContent =
     `${snapshot.players.length} / ${rules.maxPlayers}`;
   const phaseLabel = {
@@ -313,7 +334,7 @@ function frame(now: number) {
       const input = controls.sample(++seq);
       if (connection.send(input)) {
         prediction.advance(input, active);
-        if (input.attack && snapshot?.phase === "playing")
+        if (input.attack && input.weapon === 1 && snapshot?.phase === "playing")
           view.swing(now / 1000);
       }
     }

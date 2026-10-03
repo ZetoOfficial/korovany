@@ -68,6 +68,61 @@ async function until(condition, label, timeout = 10000) {
     assert.equal(await a.page.locator("#player-count").textContent(), "2 / 8");
     console.log("PASS two browsers join a room and start the same match");
 
+    // Aim through real mouse input using the public positions. Spawn headings
+    // point down the courtyard but are not exact enough for an arrow at 50 m.
+    await a.page.bringToFront();
+    await a.page.keyboard.press("2");
+    await until(
+      () => a.wire.state.players.find((p) => p.id === a.wire.id).weapon === 2,
+      "bow equipped",
+    );
+    await a.page.locator("#weapon-name").filter({ hasText: "ЛУК" }).waitFor();
+    await a.page.mouse.move(480, 360);
+    await a.page.mouse.down({ button: "right" });
+    const archer = a.wire.state.players.find((p) => p.id === a.wire.id);
+    const mark = a.wire.state.players.find((p) => p.id === b.wire.id);
+    const aimYaw = Math.atan2(archer.x - mark.x, archer.z - mark.z);
+    const yawDelta = Math.atan2(
+      Math.sin(archer.yaw - aimYaw),
+      Math.cos(archer.yaw - aimYaw),
+    );
+    await a.page.mouse.move(480 + Math.round(yawDelta / 0.0022), 360);
+    await a.page.mouse.up({ button: "right" });
+    await until(
+      () =>
+        Math.abs(
+          a.wire.state.players.find((p) => p.id === a.wire.id).yaw - aimYaw,
+        ) < 0.004,
+      "mouse aim reaches the server",
+    );
+    if (process.env.KOROVANY_SCREENSHOT)
+      await a.page.screenshot({ path: process.env.KOROVANY_SCREENSHOT });
+    await a.page.mouse.down();
+    await a.page.mouse.up();
+    await until(
+      () =>
+        b.wire.state.players.find((p) => p.id === b.wire.id).health === 66 &&
+        a.wire.state.players.find((p) => p.id === a.wire.id).arrows === 19,
+      "ranged hit reaches the other browser",
+    );
+    assert.equal(
+      a.wire.state.players.find((p) => p.id === a.wire.id).arrows,
+      19,
+    );
+    assert.ok(
+      a.wire.state.events.some(
+        (event) => event.type === "arrow" && event.actor === a.wire.id,
+      ),
+    );
+    await a.page.keyboard.press("1");
+    await until(
+      () => a.wire.state.players.find((p) => p.id === a.wire.id).weapon === 1,
+      "sword re-equipped",
+    );
+    console.log(
+      "PASS bow switches with 2, fires with the mouse and spends one arrow for a ranged hit",
+    );
+
     // Observe public snapshots to stop the actual keyboard movement in melee range.
     // The two spawn headings point across the open diagonal of the courtyard.
     const fighters = () => [
@@ -126,7 +181,7 @@ async function until(condition, label, timeout = 10000) {
     );
     console.log("PASS movement, melee damage and kill agree across browsers");
 
-    await a.page.locator("#menu-button").click();
+    await a.page.keyboard.press("p");
     await a.page.locator("#pause").waitFor({ state: "visible" });
     const pausedTick = a.wire.state.tick;
     await until(

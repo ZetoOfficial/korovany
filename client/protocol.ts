@@ -2,10 +2,11 @@ import arena from "../internal/game/data/arena.json";
 
 export const world = arena;
 export const rules = arena.rules;
-export const protocolVersion = 1;
+export const protocolVersion = 2;
 export const stepSeconds = 1 / rules.tickRate;
 
 export interface Input {
+  weapon: 1 | 2;
   seq: number;
   forward: number;
   strafe: number;
@@ -29,6 +30,8 @@ export interface Motion {
 }
 
 export interface Player extends Motion {
+  weapon: 1 | 2;
+  arrows: number;
   id: string;
   name: string;
   faction: string;
@@ -45,10 +48,12 @@ export interface Player extends Motion {
 
 export interface GameEvent {
   id: number;
-  type: "hit" | "kill" | "end";
+  type: "hit" | "kill" | "end" | "arrow";
   actor: string;
   target?: string;
   damage?: number;
+  from?: { x: number; y: number; z: number };
+  to?: { x: number; y: number; z: number };
 }
 export interface Snapshot {
   type: "snapshot";

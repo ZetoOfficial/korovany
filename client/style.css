@@ -462,6 +462,21 @@ input:focus-visible {
   grid-column: 1 / 3;
   font-size: 10px;
 }
+.weapon-slots {
+  grid-column: 1 / 3;
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+.weapon-slots button {
+  padding: 8px 12px;
+  font-size: 11px;
+  background: #17271ed9;
+}
+.weapon-slots button[aria-pressed="true"] {
+  border-color: var(--gold);
+  color: var(--gold);
+}
 .game-footer {
   position: absolute;
   bottom: 25px;

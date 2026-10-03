@@ -5,6 +5,7 @@ import { move, Prediction, SnapshotBuffer } from "../simulation.ts";
 import type { Input, Motion, Player, Snapshot } from "../protocol.ts";
 
 const input = (fields: Partial<Input> = {}): Input => ({
+  weapon: 1,
   seq: 1,
   forward: 0,
   strafe: 0,
@@ -17,6 +18,8 @@ const input = (fields: Partial<Input> = {}): Input => ({
   ...fields,
 });
 const player = (fields: Partial<Player> = {}): Player => ({
+  weapon: 1,
+  arrows: 20,
   id: "1",
   name: "Боец",
   faction: "elf",
@@ -110,4 +113,16 @@ test("prediction cannot change health or score, and pauses while dead", () => {
   assert.equal(prediction.player!.z, 10);
   assert.equal(prediction.player!.health, 0);
   assert.equal(prediction.player!.kills, 0);
+});
+
+test("bow cannot block and prediction never spends authoritative ammunition", () => {
+  const prediction = new Prediction();
+  prediction.reset(player({ stamina: 80 }));
+  prediction.advance(input({ weapon: 2, block: true, attack: true }), true);
+  assert.equal(prediction.player!.weapon, 2);
+  assert.equal(prediction.player!.blocking, false);
+  assert.equal(prediction.player!.arrows, 20);
+  prediction.reconcile(player({ ack: 0, arrows: 19 }), true);
+  assert.equal(prediction.player!.weapon, 2);
+  assert.equal(prediction.player!.arrows, 19);
 });

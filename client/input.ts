@@ -4,6 +4,7 @@ import { clamp, wrapAngle } from "./simulation.ts";
 export class Controls {
   yaw = 0;
   pitch = 0;
+  weapon: 1 | 2 = 1;
   enabled = false;
   private keys = new Set<string>();
   private attack = false;
@@ -34,6 +35,8 @@ export class Controls {
         return;
       }
       this.keys.add(e.code);
+      if (e.code === "Digit1" || e.code === "Numpad1") this.weapon = 1;
+      if (e.code === "Digit2" || e.code === "Numpad2") this.weapon = 2;
       if (!e.repeat && e.code === "Space") this.jump = true;
       if (!e.repeat && e.code === "KeyF") {
         this.attack = true;
@@ -115,6 +118,7 @@ export class Controls {
       );
     }
     const input: Input = {
+      weapon: this.weapon,
       seq,
       yaw: this.yaw,
       pitch: this.pitch,
@@ -129,7 +133,7 @@ export class Controls {
         this.enabled &&
         (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")),
       attack: this.enabled && (this.attack || this.swing),
-      block: this.enabled && this.block,
+      block: this.enabled && this.block && this.weapon === 1,
     };
     this.jump = false;
     this.swing = false;

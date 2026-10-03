@@ -16,7 +16,8 @@
     <div class="vignette"></div>
     <main id="lobby">
       <header class="masthead">
-        <a href="%BASE_URL%">КОРОВАНЫ</a><span>СЕТЕВАЯ ИГРА <i>·</i> 2–8 ИГРОКОВ</span>
+        <a href="%BASE_URL%">КОРОВАНЫ</a
+        ><span>СЕТЕВАЯ ИГРА <i>·</i> 2–8 ИГРОКОВ</span>
       </header>
       <section class="intro">
         <p class="eyebrow">СТАРЫЙ ТРАКТ · НОВЫЕ СОПЕРНИКИ</p>
@@ -61,7 +62,7 @@
         <small>3 минуты · до 10 убийств · возрождение через 3 секунды</small>
       </aside>
       <footer class="lobby-footer">
-        <span>WASD · МЫШЬ · ЛКМ КЛИНОК · ПКМ БЛОК</span
+        <span>WASD · МЫШЬ · 1 КЛИНОК · 2 ЛУК · ЛКМ АТАКА</span
         ><a href="%BASE_URL%">Одиночное путешествие ↗</a>
       </footer>
     </main>
@@ -98,8 +99,14 @@
         <p id="shield-status"></p>
       </div>
       <div class="weapon-label">
-        <span>01</span><strong>КЛИНОК</strong
-        ><small>ЛКМ / F · удар &nbsp; ПКМ / B · блок</small>
+        <span id="weapon-number">01</span
+        ><strong id="weapon-name">КЛИНОК</strong>
+        <small id="weapon-hint">ЛКМ / F · удар · ПКМ / B · блок</small>
+        <small id="ammo">Стрелы: 20 / 20</small>
+        <div class="weapon-slots" aria-label="Оружие">
+          <button id="weapon-sword" aria-pressed="true">1 · Клинок</button>
+          <button id="weapon-bow" aria-pressed="false">2 · Лук</button>
+        </div>
       </div>
       <footer class="game-footer">
         WASD движение <i>·</i> Shift бег <i>·</i> Пробел прыжок <i>·</i> Стрелки

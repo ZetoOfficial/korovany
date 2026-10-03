@@ -26,7 +26,7 @@ export function move(p: Motion, input: Input): void {
   const dt = stepSeconds;
   p.yaw = input.yaw;
   p.pitch = input.pitch;
-  p.blocking = input.block && p.stamina > 5;
+  p.blocking = input.block && input.weapon !== 2 && p.stamina > 5;
   let { forward, strafe } = input;
   const length = Math.hypot(forward, strafe);
   if (length > 1) {
@@ -81,7 +81,10 @@ export class Prediction {
     this.pending.push(input);
     // Bound memory and visual speculation if the server stops responding.
     if (this.pending.length > 120) this.pending.shift();
-    if (active && this.player.health > 0) move(this.player, input);
+    if (active && this.player.health > 0) {
+      this.player.weapon = input.weapon;
+      move(this.player, input);
+    }
   }
 
   reconcile(player: Player, active: boolean) {
@@ -92,7 +95,10 @@ export class Prediction {
     this.pending = this.pending.filter((input) => input.seq > player.ack);
     this.player = { ...player };
     if (active && player.health > 0)
-      for (const input of this.pending) move(this.player, input);
+      for (const input of this.pending) {
+        this.player.weapon = input.weapon;
+        move(this.player, input);
+      }
   }
 }
 

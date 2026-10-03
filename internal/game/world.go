@@ -16,6 +16,9 @@ type Rules struct {
 	JumpCost, RunDrain, StaminaRegen, BlockRegen, AttackCost                       float64
 	AttackTicks                                                                    uint64
 	AttackRange, AttackDamage                                                      float64
+	BowCost, BowRange, BowDamage                                                   float64
+	BowTicks                                                                       uint64
+	Arrows                                                                         int
 }
 
 type Obstacle struct{ X, Z, W, D, Height float64 }
@@ -71,6 +74,7 @@ func (w World) Clear(ax, az, bx, bz float64) bool {
 }
 
 type Input struct {
+	Weapon  int     `json:"weapon,omitempty"`
 	Seq     uint64  `json:"seq"`
 	Forward float64 `json:"forward"`
 	Strafe  float64 `json:"strafe"`
@@ -88,7 +92,7 @@ func (i Input) Valid() bool {
 			return false
 		}
 	}
-	return i.Seq > 0 && i.Seq < 1<<53 && math.Abs(i.Forward) <= 1 && math.Abs(i.Strafe) <= 1 && math.Abs(i.Yaw) <= math.Pi && math.Abs(i.Pitch) <= 1.35
+	return i.Weapon >= 0 && i.Weapon <= Bow && i.Seq > 0 && i.Seq < 1<<53 && math.Abs(i.Forward) <= 1 && math.Abs(i.Strafe) <= 1 && math.Abs(i.Yaw) <= math.Pi && math.Abs(i.Pitch) <= 1.35
 }
 
 type Motion struct {
@@ -107,7 +111,7 @@ type Motion struct {
 func Move(w World, p *Motion, i Input) {
 	r, dt := w.Rules, 1/float64(w.Rules.TickRate)
 	p.Yaw, p.Pitch = i.Yaw, i.Pitch
-	p.Blocking = i.Block && p.Stamina > 5
+	p.Blocking = i.Block && i.Weapon != Bow && p.Stamina > 5
 	f, s := i.Forward, i.Strafe
 	length := math.Hypot(f, s)
 	if length > 1 {

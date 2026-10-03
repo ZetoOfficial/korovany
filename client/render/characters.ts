@@ -50,8 +50,10 @@ export function createHumanoid(faction: string, commander = false) {
     box(joint, 0, -0.83, -0.08, 0.28, 0.18, 0.44, "#4d4031");
     parts[name] = joint;
   }
-  box(parts.otherArm, 0, -0.73, -0.4, 0.065, 0.065, 0.9, "#ced0b4");
-  box(parts.otherArm, 0, -0.73, -0.11, 0.33, 0.08, 0.08, "#b69e61");
+  const sword = new THREE.Group();
+  parts.otherArm.add(sword);
+  box(sword, 0, -0.73, -0.4, 0.065, 0.065, 0.9, "#ced0b4");
+  box(sword, 0, -0.73, -0.11, 0.33, 0.08, 0.08, "#b69e61");
   const cape = box(
     g,
     0,
@@ -72,5 +74,5 @@ export function createHumanoid(faction: string, commander = false) {
   }
   if (commander)
     shape(g, coneGeometry, 0, 2.28, 0, 0.16, 0.35, 0.16, "#d7b264");
-  return { group: g, parts };
+  return { group: g, parts, sword };
 }

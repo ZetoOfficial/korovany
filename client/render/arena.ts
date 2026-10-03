@@ -1,11 +1,13 @@
 import * as THREE from "three";
 import { createHumanoid } from "./characters.ts";
 import { box, shape, coneGeometry, cylinderGeometry } from "./primitives.ts";
-import { rules, world, type Player } from "../protocol.ts";
+import { rules, world, type Player, type GameEvent } from "../protocol.ts";
+import { createBow } from "./bow.ts";
 
 type Avatar = ReturnType<typeof createHumanoid> & {
   label: THREE.Sprite;
   shield: THREE.Mesh;
+  bow: THREE.Group;
 };
 
 export class ArenaView {
@@ -14,6 +16,14 @@ export class ArenaView {
   private camera = new THREE.PerspectiveCamera(70, 1, 0.08, 260);
   private avatars = new Map<string, Avatar>();
   private weapon = new THREE.Group();
+  private bow = createBow();
+  private shotStart = -10;
+  private trails: { mesh: THREE.Mesh; until: number }[] = [];
+  private trailMaterial = new THREE.MeshBasicMaterial({
+    color: "#ffe4a2",
+    transparent: true,
+    opacity: 0.85,
+  });
   private swingStart = -10;
   private lookReady = false;
   private smoothPosition = new THREE.Vector3();
@@ -192,6 +202,10 @@ export class ArenaView {
     box(this.weapon, 0.38, -0.12, -0.75, 0.055, 0.95, 0.07, "#d6dccb", false);
     box(this.weapon, 0.38, -0.45, -0.75, 0.4, 0.07, 0.1, "#b79c62", false);
     this.weapon.visible = false;
+    this.bow.position.set(0.26, -0.17, -0.9);
+    this.bow.scale.setScalar(0.75);
+    this.bow.visible = false;
+    this.camera.add(this.bow);
     window.addEventListener("resize", () => this.resize());
     this.resize();
   }
@@ -205,6 +219,25 @@ export class ArenaView {
   swing(now: number) {
     if (now - this.swingStart > rules.attackTicks / rules.tickRate)
       this.swingStart = now;
+  }
+  shot(event: GameEvent, localID: string) {
+    if (!event.from || !event.to) return;
+    const now = performance.now() / 1000;
+    const start =
+      event.actor === localID
+        ? this.camera.localToWorld(new THREE.Vector3(0.29, -0.17, -0.98))
+        : new THREE.Vector3(event.from.x, event.from.y, event.from.z);
+    const end = new THREE.Vector3(event.to.x, event.to.y, event.to.z);
+    const mesh = new THREE.Mesh(cylinderGeometry, this.trailMaterial);
+    mesh.position.copy(start).lerp(end, 0.5);
+    mesh.scale.set(0.018, start.distanceTo(end), 0.018);
+    mesh.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      end.sub(start).normalize(),
+    );
+    this.scene.add(mesh);
+    this.trails.push({ mesh, until: now + 0.18 });
+    if (event.actor === localID) this.shotStart = now;
   }
   setQuality(low: boolean) {
     this.renderer.setPixelRatio(low ? 0.85 : Math.min(devicePixelRatio, 1.5));
@@ -244,7 +277,11 @@ export class ArenaView {
     shield.position.y = 1.1;
     model.group.add(shield);
     this.scene.add(model.group);
-    const avatar = { ...model, label, shield };
+    const bow = createBow();
+    bow.position.set(0, -0.65, -0.2);
+    bow.rotation.x = 1.15;
+    model.parts.otherArm.add(bow);
+    const avatar = { ...model, label, shield, bow };
     this.avatars.set(player.id, avatar);
     return avatar;
   }
@@ -259,6 +296,11 @@ export class ArenaView {
     dt: number,
     now: number,
   ) {
+    this.trails = this.trails.filter((trail) => {
+      if (now < trail.until && local) return true;
+      this.scene.remove(trail.mesh);
+      return false;
+    });
     const present = new Set(
       remotes.filter((p) => p.id !== id).map((p) => p.id),
     );
@@ -300,6 +342,13 @@ export class ArenaView {
           : player.blocking
             ? -1
             : walk * 0.5;
+      avatar.sword.visible = player.weapon === 1;
+      avatar.bow.visible = player.weapon === 2;
+      if (player.weapon === 2) {
+        avatar.parts.arm.rotation.x = -1.15;
+        avatar.parts.otherArm.rotation.x = -1.15;
+        avatar.bow.getObjectByName("arrow")!.visible = player.arrows > 0;
+      }
       avatar.label.visible = player.health > 0;
       avatar.shield.visible = tick < player.shieldTick && player.health > 0;
     }
@@ -319,7 +368,11 @@ export class ArenaView {
       this.localLife = local.life;
       this.camera.position.copy(this.smoothPosition);
       this.camera.rotation.set(pitch, yaw, 0);
-      this.weapon.visible = local.health > 0;
+      this.weapon.visible = local.health > 0 && local.weapon === 1;
+      this.bow.visible = local.health > 0 && local.weapon === 2;
+      this.bow.position.z =
+        -0.9 + Math.max(0, 1 - (now - this.shotStart) * 5) * 0.13;
+      this.bow.getObjectByName("arrow")!.visible = local.arrows > 0;
       const swing = Math.max(0, 1 - (now - this.swingStart) * 3.2);
       this.weapon.rotation.set(
         -Math.sin(swing * Math.PI) * 0.8,
@@ -329,6 +382,7 @@ export class ArenaView {
     } else {
       this.lookReady = false;
       this.weapon.visible = false;
+      this.bow.visible = false;
       this.camera.position.set(Math.sin(now * 0.035) * 14, 15, 25);
       this.camera.lookAt(0, 0, 0);
     }
