@@ -1,0 +1,53 @@
+{
+  "version": "tract-1",
+  "name": "Схватка на тракте",
+  "bounds": { "x": 24, "z": 30 },
+  "rules": {
+    "tickRate": 60,
+    "snapshotRate": 20,
+    "maxPlayers": 8,
+    "roundSeconds": 180,
+    "scoreLimit": 10,
+    "countdownSeconds": 3,
+    "respawnSeconds": 3,
+    "shieldSeconds": 1.5,
+    "radius": 0.46,
+    "walkSpeed": 5.2,
+    "runSpeed": 9,
+    "gravity": 17,
+    "jumpSpeed": 6.3,
+    "jumpCost": 12,
+    "runDrain": 12,
+    "staminaRegen": 19,
+    "blockRegen": 4,
+    "attackCost": 12,
+    "attackTicks": 32,
+    "attackRange": 3.2,
+    "attackDamage": 35
+  },
+  "spawns": [
+    { "x": 0, "z": 12, "yaw": 0 },
+    { "x": 0, "z": -12, "yaw": 3.141592653589793 },
+    { "x": -16, "z": 20, "yaw": -0.7 },
+    { "x": 16, "z": -20, "yaw": 2.441592653589793 },
+    { "x": 16, "z": 20, "yaw": 0.7 },
+    { "x": -16, "z": -20, "yaw": -2.441592653589793 },
+    { "x": -19, "z": 0, "yaw": -1.5707963267948966 },
+    { "x": 19, "z": 0, "yaw": 1.5707963267948966 }
+  ],
+  "obstacles": [
+    { "kind": "tower", "x": -24, "z": -30, "w": 5, "d": 5, "height": 8, "color": "#919781" },
+    { "kind": "tower", "x": 24, "z": -30, "w": 5, "d": 5, "height": 8, "color": "#919781" },
+    { "kind": "tower", "x": -24, "z": 30, "w": 5, "d": 5, "height": 8, "color": "#919781" },
+    { "kind": "tower", "x": 24, "z": 30, "w": 5, "d": 5, "height": 8, "color": "#919781" },
+    { "kind": "wall", "x": -24.8, "z": 0, "w": 1.6, "d": 63, "height": 4, "color": "#879078" },
+    { "kind": "wall", "x": 24.8, "z": 0, "w": 1.6, "d": 63, "height": 4, "color": "#879078" },
+    { "kind": "wall", "x": 0, "z": -30.8, "w": 48, "d": 1.6, "height": 4, "color": "#879078" },
+    { "kind": "wall", "x": 0, "z": 30.8, "w": 48, "d": 1.6, "height": 4, "color": "#879078" },
+    { "kind": "cart", "x": 9, "z": 0, "w": 4, "d": 7, "height": 3, "color": "#b19a6f" },
+    { "kind": "crate", "x": -9, "z": -6, "w": 4, "d": 3, "height": 2.4, "color": "#82684c" },
+    { "kind": "crate", "x": -10, "z": 7, "w": 3, "d": 4, "height": 2.4, "color": "#82684c" },
+    { "kind": "crate", "x": 14, "z": 13, "w": 3, "d": 3, "height": 2.4, "color": "#82684c" },
+    { "kind": "crate", "x": 14, "z": -13, "w": 3, "d": 3, "height": 2.4, "color": "#82684c" }
+  ]
+}

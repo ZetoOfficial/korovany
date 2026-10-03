@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#182823" />
+    <title>КОРОВАНЫ · Сетевая схватка</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23182823'/%3E%3Ctext x='32' y='47' font-family='serif' font-size='48' text-anchor='middle' fill='%23e7c797'%3EК%3C/text%3E%3C/svg%3E"
+    />
+    <script type="module" src="/client/main.ts"></script>
+  </head>
+  <body>
+    <canvas id="world" aria-label="Арена на старом тракте"></canvas>
+    <div class="vignette"></div>
+    <main id="lobby">
+      <header class="masthead">
+        <a href="/">КОРОВАНЫ</a><span>СЕТЕВАЯ ИГРА <i>·</i> 2–8 ИГРОКОВ</span>
+      </header>
+      <section class="intro">
+        <p class="eyebrow">СТАРЫЙ ТРАКТ · НОВЫЕ СОПЕРНИКИ</p>
+        <h1>Здесь решает<br /><em>клинок.</em></h1>
+        <p class="lead">
+          Лес помнит набеги. Тракт — победителей.<br />Собери друзей и выясни,
+          чья возьмёт.
+        </p>
+        <form id="join-form" class="lobby-card">
+          <label for="name">Как тебя запомнят</label>
+          <input
+            id="name"
+            name="name"
+            maxlength="24"
+            value="Путник"
+            autocomplete="nickname"
+            required
+          />
+          <button id="create" type="button" class="primary" disabled>
+            ЗАГРУЖАЕМ АРЕНУ…
+          </button>
+          <div class="divider"><span>или войти к друзьям</span></div>
+          <label for="room-code">Код комнаты</label>
+          <div class="join-row">
+            <input
+              id="room-code"
+              name="room"
+              placeholder="A1B2C3"
+              maxlength="6"
+              pattern="[a-fA-F0-9]{6}"
+              autocomplete="off"
+            /><button id="join" type="submit" class="secondary" disabled>
+              ВОЙТИ →
+            </button>
+          </div>
+          <p id="lobby-status" class="status" role="status">Готовим тракт…</p>
+        </form>
+      </section>
+      <aside class="lobby-caption">
+        <span>01 / СХВАТКА НА ТРАКТЕ</span>
+        <p>Один двор. Десять побед.<br />И никакой пощады.</p>
+        <small>3 минуты · до 10 убийств · возрождение через 3 секунды</small>
+      </aside>
+      <footer class="lobby-footer">
+        <span>WASD · МЫШЬ · ЛКМ КЛИНОК · ПКМ БЛОК</span
+        ><a href="/">Одиночное путешествие ↗</a>
+      </footer>
+    </main>
+    <section id="hud" hidden aria-label="Состояние матча">
+      <header class="match-header">
+        <div>
+          <span class="eyebrow">КОМНАТА</span
+          ><button id="copy-room" title="Скопировать приглашение">
+            <b id="room-label">—</b> ↗</button
+          ><small id="copy-status" role="status"></small>
+        </div>
+        <div class="match-center">
+          <p id="phase">Ждём соперника</p>
+          <strong id="timer">—</strong>
+        </div>
+        <button id="menu-button" class="small-button">МЕНЮ · P</button>
+      </header>
+      <div class="network">
+        <span id="connection">Подключаемся</span><span id="ping">— мс</span
+        ><span id="fps">— FPS</span>
+      </div>
+      <aside class="scoreboard">
+        <p class="eyebrow">БОЙЦЫ <span id="player-count">0 / 8</span></p>
+        <ol id="players"></ol>
+      </aside>
+      <div id="crosshair" aria-hidden="true">+</div>
+      <div id="hit-marker" hidden aria-hidden="true">×</div>
+      <div id="center-notice" role="status"></div>
+      <div id="feed" role="log" aria-label="События матча"></div>
+      <div class="survival">
+        <div><span id="health-text">100</span><small>ЖИЗНЬ</small></div>
+        <div class="bar health"><i id="health-bar"></i></div>
+        <div class="bar stamina"><i id="stamina-bar"></i></div>
+        <p id="shield-status"></p>
+      </div>
+      <div class="weapon-label">
+        <span>01</span><strong>КЛИНОК</strong
+        ><small>ЛКМ / F · удар &nbsp; ПКМ / B · блок</small>
+      </div>
+      <footer class="game-footer">
+        WASD движение <i>·</i> Shift бег <i>·</i> Пробел прыжок <i>·</i> Стрелки
+        обзор
+      </footer>
+    </section>
+    <div id="damage" aria-hidden="true"></div>
+    <div id="pause" class="modal-backdrop" hidden>
+      <section
+        class="panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pause-title"
+      >
+        <p class="eyebrow">КОРОВАНЫ / ПРИВАЛ</p>
+        <h2 id="pause-title">Перевести дух</h2>
+        <p>
+          Матч продолжается, пока открыто меню. Твой боец остаётся на арене.
+        </p>
+        <button id="resume" class="primary">ВЕРНУТЬСЯ В БОЙ →</button>
+        <label class="quality"
+          ><input id="low-quality" type="checkbox" /> Лёгкая графика</label
+        >
+        <button id="leave" class="secondary">Покинуть комнату</button>
+      </section>
+    </div>
+    <noscript>Для игры включите JavaScript.</noscript>
+  </body>
+</html>

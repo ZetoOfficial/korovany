@@ -1,0 +1,29 @@
+name: Check game
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: npm ci
+      - run: make check
+      - run: make build
+      - run: npx playwright install --with-deps chromium
+      - name: Campaign regression
+        run: |
+          ./bin/korovany > /tmp/korovany.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health; then break; fi
+            sleep 1
+          done
+          npm run test:campaign
+          npm run test:multiplayer

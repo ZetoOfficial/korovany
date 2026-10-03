@@ -1,0 +1,32 @@
+[
+  {
+    "name": "walking uses elapsed server ticks",
+    "start": { "x": 0, "z": 10, "stamina": 100 },
+    "steps": [{ "count": 60, "input": { "forward": 1 } }],
+    "expected": { "x": 0, "z": 4.8, "y": 0, "stamina": 100 }
+  },
+  {
+    "name": "diagonal movement has no speed advantage",
+    "start": { "x": 0, "z": 15, "stamina": 100 },
+    "steps": [{ "count": 30, "input": { "forward": 1, "strafe": 1 } }],
+    "expected": { "x": 1.8384776310850237, "z": 13.161522368914977, "y": 0, "stamina": 100 }
+  },
+  {
+    "name": "sprinting consumes stamina",
+    "start": { "x": 0, "z": 10, "stamina": 100 },
+    "steps": [{ "count": 60, "input": { "forward": 1, "sprint": true } }],
+    "expected": { "x": 0, "z": 1, "y": 0, "stamina": 88 }
+  },
+  {
+    "name": "crate blocks both client and server",
+    "start": { "x": -5, "z": -6, "stamina": 100 },
+    "steps": [{ "count": 60, "input": { "forward": 1, "yaw": 1.5707963267948966 } }],
+    "expected": { "x": -6.473333333333333, "z": -6, "y": 0, "stamina": 100 }
+  },
+  {
+    "name": "jump lands and restores stamina",
+    "start": { "x": 0, "z": 10, "stamina": 100 },
+    "steps": [{ "count": 1, "input": { "jump": true } }, { "count": 59, "input": {} }],
+    "expected": { "x": 0, "z": 10, "y": 0, "stamina": 100 }
+  }
+]

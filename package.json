@@ -1,0 +1,27 @@
+{
+  "name": "korovany",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "format": "prettier --write client arena vite.config.ts tsconfig.json tests/multiplayer.cjs",
+    "test": "node --import tsx --test client/tests/*.test.ts",
+    "test:campaign": "node tests/browser.cjs",
+    "test:multiplayer": "node tests/multiplayer.cjs"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.4",
+    "@types/three": "0.170.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.2"
+  }
+}
