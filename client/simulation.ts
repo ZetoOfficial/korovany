@@ -87,6 +87,55 @@ export function move(p: Motion, input: Input): void {
   );
 }
 
+// Drain a server backlog by generating slightly fewer NEW steps. Never drop a
+// command already predicted/sent, and never count commands still in transit as
+// a server backlog. The ACK barrier prevents reacting twice to delayed reports.
+export class InputPacer {
+  private debt = 0;
+  private stride = 0;
+  private waitForSeq = 0;
+  private samples = 0;
+  private minimumQueue = Infinity;
+
+  reset() {
+    this.debt = this.stride = this.waitForSeq = 0;
+    this.samples = 0;
+    this.minimumQueue = Infinity;
+  }
+
+  observe(player: Player, lastSentSeq: number) {
+    if (this.debt || player.ack < this.waitForSeq) return;
+    let queued = player.queuedInputs ?? 0;
+    this.minimumQueue = Math.min(this.minimumQueue, queued);
+    this.samples++;
+    // Small queues can just be frame batching or jitter. Trim only their
+    // sustained minimum across 200 ms of snapshots; large bursts drain now.
+    if (queued < 4) {
+      if (this.samples < rules.snapshotRate / 5) return;
+      queued = this.minimumQueue;
+    }
+    this.samples = 0;
+    this.minimumQueue = Infinity;
+    if (queued < 2) return;
+    // Leave one waiting step (two including the processed step) for frame
+    // batching and the 350 ms rewind budget. Spread the correction over
+    // several frames instead of pausing movement for the whole backlog.
+    this.debt = queued - 1;
+    this.stride = 0;
+    this.waitForSeq = lastSentSeq;
+  }
+
+  advance(lastSentSeq: number): boolean {
+    if (!this.debt || ++this.stride < 4) return true;
+    this.stride = 0;
+    this.debt--;
+    // Wait until the first command after this skipped tick has been processed,
+    // so the next feedback already includes the rate correction in full.
+    this.waitForSeq = lastSentSeq + 1;
+    return false;
+  }
+}
+
 export class Prediction {
   player: Player | null = null;
   pending: Input[] = [];

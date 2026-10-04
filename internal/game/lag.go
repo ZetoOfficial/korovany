@@ -21,30 +21,6 @@ type queuedInput struct {
 	receivedTick float64
 }
 
-// Both sides normally produce/consume 60 commands per second, so a burst can
-// otherwise leave a permanent queue. Retain two ticks for ordinary frame
-// batching, and preserve one-shot actions with their original aim/view/seq.
-// Discarded movement is acknowledged with the next processed command; it never
-// advances the simulation faster than one authoritative step per tick.
-func (p *Player) coalesceInputs(tick uint64) {
-	preservedAttack := false
-	previous := Input{Weapon: p.Weapon, Attack: p.BowDrawTicks > 0}
-	for i := 0; i < len(p.queue)-2; {
-		old, next := p.queue[i].Input, p.queue[i+1].Input
-		// Keep the first potentially accepted held attack too, so its sequence
-		// still matches the predicted animation. Subsequent repeats can merge.
-		bowTransition := (old.Weapon == Bow || previous.Weapon == Bow) && (old.Attack != previous.Attack || old.Weapon != previous.Weapon)
-		previous = old
-		keepAttack := old.Weapon != Bow && old.Attack && ((!preservedAttack && tick >= p.NextAttackTick) || !next.Attack || old.Weapon != next.Weapon)
-		if old.Jump || keepAttack || bowTransition || old.CancelAttack || (old.Block && !next.Block) {
-			preservedAttack = preservedAttack || old.Attack
-			i++
-			continue
-		}
-		p.queue = append(p.queue[:i], p.queue[i+1:]...)
-	}
-}
-
 type historyFrame struct {
 	tick    uint64
 	players []Player

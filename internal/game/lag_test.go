@@ -257,23 +257,31 @@ func TestHistoryBoundedAndOldLifeInputRejected(t *testing.T) {
 	}
 }
 
-func TestInputBurstsDoNotLeavePermanentLatency(t *testing.T) {
-	m, a, _ := readyMatch(t)
-	for seq := uint64(1); seq <= 8; seq++ {
-		m.Input(a.ID, Input{Seq: seq, Forward: 1})
-	}
-	m.Step()
-	if a.Ack != 7 || len(a.queue) != 1 || math.Abs(a.Z+m.World.Rules.WalkSpeed/60) > 1e-8 {
-		t.Fatalf("burst caused backlog or extra movement: ack=%d queue=%d z=%v", a.Ack, len(a.queue), a.Z)
-	}
-	m.Input(a.ID, Input{Seq: 9, Forward: 1})
-	m.Step()
-	if a.Ack != 8 || len(a.queue) != 1 {
-		t.Fatal("queue did not stay bounded")
+func TestInputBurstsPreserveEveryPredictedMovementStep(t *testing.T) {
+	for _, sprint := range []bool{false, true} {
+		m, a, _ := readyMatch(t)
+		speed := m.World.Rules.WalkSpeed
+		if sprint {
+			speed = m.World.Rules.RunSpeed
+		}
+		for seq := uint64(1); seq <= 8; seq++ {
+			if !m.Input(a.ID, Input{Seq: seq, Forward: 1, Sprint: sprint}) {
+				t.Fatal("movement command rejected")
+			}
+		}
+		for seq := uint64(1); seq <= 8; seq++ {
+			m.Step()
+			if a.Ack != seq || len(a.queue) != 8-int(seq) || math.Abs(a.Z+float64(seq)*speed/60) > 1e-8 {
+				t.Fatalf("acknowledged movement was lost: sprint=%v step=%d ack=%d queue=%d z=%v", sprint, seq, a.Ack, len(a.queue), a.Z)
+			}
+			if m.Snapshot().Players[0].QueuedInputs != len(a.queue) {
+				t.Fatal("snapshot must report the remaining movement backlog")
+			}
+		}
 	}
 }
 
-func TestCoalescingPreservesClicksJumpsAndAttackContext(t *testing.T) {
+func TestInputQueuePreservesClicksJumpsAndAttackContext(t *testing.T) {
 	m, a, b, _ := historicalMatch(t, Sword, .2)
 	view := &ViewTime{Tick: 222, From: 222, To: 222}
 	m.Input(a.ID, Input{Seq: 1})
@@ -281,6 +289,10 @@ func TestCoalescingPreservesClicksJumpsAndAttackContext(t *testing.T) {
 	m.Input(a.ID, Input{Seq: 3, Jump: true, Yaw: math.Pi})
 	m.Input(a.ID, Input{Seq: 4, Yaw: math.Pi})
 	m.Input(a.ID, Input{Seq: 5, Yaw: math.Pi})
+	m.Step()
+	if a.Ack != 1 || a.LastAttackSeq != 0 {
+		t.Fatal("queue skipped the first command")
+	}
 	m.Step()
 	if a.Ack != 2 || a.LastAttackSeq != 2 || b.Health != 100 || a.swing == nil {
 		t.Fatalf("isolated click lost its aim/time: %+v", a.LastCombat)
@@ -295,13 +307,13 @@ func TestCoalescingPreservesClicksJumpsAndAttackContext(t *testing.T) {
 	}
 }
 
-func TestCoalescingPreservesFirstPredictedHeldAttack(t *testing.T) {
+func TestInputQueuePreservesFirstPredictedHeldAttack(t *testing.T) {
 	m, a, b := readyMatch(t)
 	for seq := uint64(1); seq <= 8; seq++ {
 		m.Input(a.ID, Input{Seq: seq, Attack: true})
 	}
 	m.Step()
-	if a.LastAttackSeq != 1 || b.Health != 100 || a.swing == nil || len(a.queue) > 2 {
+	if a.LastAttackSeq != 1 || b.Health != 100 || a.swing == nil || len(a.queue) != 7 {
 		t.Fatal("first held attack changed identity")
 	}
 	m.Step()

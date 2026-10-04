@@ -23,6 +23,7 @@ type Player struct {
 	Kills            int               `json:"kills"`
 	Deaths           int               `json:"deaths"`
 	Ack              uint64            `json:"ack"`
+	QueuedInputs     int               `json:"queuedInputs"`
 	Life             uint64            `json:"life"`
 	AttackTick       uint64            `json:"attackTick"`
 	LastAttackSeq    uint64            `json:"lastAttackSeq"`
@@ -421,7 +422,8 @@ func (m *Match) Step() {
 	for _, p := range m.ordered() {
 		input := Input{Yaw: p.Yaw, Pitch: p.Pitch, Weapon: p.Weapon}
 		queued := queuedInput{receivedTick: float64(m.Tick)}
-		p.coalesceInputs(m.Tick)
+		// Each accepted command owns one predicted movement step. Keep FIFO:
+		// acknowledging a discarded step would pull the client backwards.
 		if len(p.queue) > 0 {
 			queued = p.queue[0]
 			input = queued.Input
@@ -490,6 +492,7 @@ func (m *Match) Snapshot() Snapshot {
 	s := Snapshot{Type: "snapshot", Tick: m.Tick, Phase: m.Phase, EndTick: m.EndTick, Players: make([]Player, 0, len(m.Players)), Events: append([]Event{}, m.events...), Projectiles: append([]Projectile{}, m.projectiles...)}
 	for _, p := range m.ordered() {
 		copy := *p
+		copy.QueuedInputs = len(p.queue)
 		copy.queue = nil
 		copy.swing = nil
 		if p.LastCombat != nil {

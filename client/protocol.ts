@@ -66,6 +66,7 @@ export interface Player extends Motion {
   kills: number;
   deaths: number;
   ack: number;
+  queuedInputs?: number;
   life: number;
   attackTick: number;
   lastAttackSeq: number;

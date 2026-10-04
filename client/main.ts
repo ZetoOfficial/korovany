@@ -3,7 +3,12 @@ import "./style.css";
 import { ArenaView } from "./render/arena.ts";
 import { Controls } from "./input.ts";
 import { MatchConnection, createRoom } from "./network.ts";
-import { AttackFeedback, Prediction, SnapshotBuffer } from "./simulation.ts";
+import {
+  AttackFeedback,
+  InputPacer,
+  Prediction,
+  SnapshotBuffer,
+} from "./simulation.ts";
 import { SeppukuPresentation } from "./seppuku.ts";
 import { roundWinners } from "./results.ts";
 import {
@@ -32,6 +37,7 @@ const addDummyButton = el<HTMLButtonElement>("add-dummy"),
   removeDummiesButton = el<HTMLButtonElement>("remove-dummies");
 let dummyPending = false;
 const prediction = new Prediction(),
+  inputPacer = new InputPacer(),
   snapshots = new SnapshotBuffer();
 let feedback = new AttackFeedback();
 let displayedView: ViewTime | undefined;
@@ -183,6 +189,8 @@ function receive(next: Snapshot) {
     const wasForfeited = prediction.player?.forfeited;
     const newLife =
       !prediction.player || player.life !== prediction.player.life;
+    if (newLife) inputPacer.reset();
+    inputPacer.observe(player, seq);
     prediction.reconcile(
       player,
       next.phase === "playing" || next.phase === "waiting",
@@ -545,7 +553,7 @@ function frame(now: number) {
     healthy && !menuOpen && !!active && (prediction.player?.health ?? 0) > 0,
   );
   while (accumulator >= stepSeconds) {
-    if (healthy && connection && prediction.player) {
+    if (healthy && connection && prediction.player && inputPacer.advance(seq)) {
       const input = controls.sample(++seq);
       input.life = prediction.player.life;
       input.view = displayedView;

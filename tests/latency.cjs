@@ -20,26 +20,39 @@ async function until(condition, label, timeout = 15000) {
 function delivery(delay, jitter, send) {
   let due = 0,
     count = 0,
-    stopped = false;
-  const timers = new Set();
+    stopped = false,
+    timer = null;
+  const queue = [];
+  const schedule = () => {
+    if (timer || stopped || !queue.length) return;
+    timer = setTimeout(
+      () => {
+        timer = null;
+        while (!stopped && queue[0]?.due <= Date.now())
+          send(queue.shift().payload);
+        schedule();
+      },
+      Math.max(0, queue[0].due - Date.now()),
+    );
+  };
   return {
+    hold(ms) {
+      due = Math.max(due, Date.now() + ms);
+    },
     push(payload) {
       due = Math.max(
         due,
         Date.now() + delay + jitter * Math.sin(++count * 1.7),
       );
-      const timer = setTimeout(
-        () => {
-          timers.delete(timer);
-          if (!stopped) send(payload);
-        },
-        Math.max(0, due - Date.now()),
-      );
-      timers.add(timer);
+      // One FIFO and one timer: independent timers with the same deadline can
+      // wake out of order and accidentally simulate UDP instead of WebSocket.
+      queue.push({ due, payload });
+      schedule();
     },
     stop() {
       stopped = true;
-      for (const timer of timers) clearTimeout(timer);
+      clearTimeout(timer);
+      queue.length = 0;
     },
   };
 }
@@ -63,9 +76,12 @@ async function client(browser, name, rtt, jitter, errors) {
     attacks: new Map(),
     events: new Map(),
     prediction: new Prediction(),
+    movement: null,
+    holdOutgoing: null,
   };
   await page.routeWebSocket("**/ws/*", (socket) => {
     const server = socket.connectToServer();
+    let lastDeliveredInput = 0;
     const incoming = delivery(rtt / 2, jitter, (payload) => {
       const message = JSON.parse(payload.toString());
       if (message.type === "welcome") wire.id = message.id;
@@ -80,24 +96,61 @@ async function client(browser, name, rtt, jitter, errors) {
         wire.frames.set(state.tick, state);
         if (wire.frames.size > 64)
           wire.frames.delete(wire.frames.keys().next().value);
+        const before = wire.prediction.player;
+        const authoritative = state.players.find((p) => p.id === wire.id);
         wire.prediction.reconcile(
-          state.players.find((p) => p.id === wire.id),
+          authoritative,
           ["playing", "waiting"].includes(state.phase),
           state.tick,
           state.phase === "playing",
         );
+        if (wire.movement && before?.life === authoritative.life) {
+          const after = wire.prediction.player;
+          const correction = Math.hypot(after.x - before.x, after.z - before.z);
+          if (correction > wire.movement.maxCorrection + 1e-8)
+            console.log("Movement correction", {
+              tick: state.tick,
+              correction,
+              before: { z: before.z, ack: before.ack },
+              server: {
+                z: authoritative.z,
+                ack: authoritative.ack,
+                queued: authoritative.queuedInputs,
+              },
+              after: after.z,
+              pending: wire.prediction.pending.map((i) => i.seq),
+              input: wire.input,
+            });
+          wire.movement.maxCorrection = Math.max(
+            wire.movement.maxCorrection,
+            Math.hypot(after.x - before.x, after.z - before.z),
+          );
+          wire.movement.maxQueue = Math.max(
+            wire.movement.maxQueue,
+            authoritative.queuedInputs ?? 0,
+          );
+          wire.movement.samples++;
+        }
         for (const event of state.events) wire.events.set(event.id, event);
       }
       socket.send(payload);
     });
     const outgoing = delivery(rtt / 2, jitter, (payload) => {
       const message = JSON.parse(payload.toString());
+      if (message.type === "input") {
+        assert.ok(
+          message.input.seq > lastDeliveredInput,
+          `delay transport reordered ${lastDeliveredInput} -> ${message.input.seq}`,
+        );
+        lastDeliveredInput = message.input.seq;
+      }
       if (message.type === "input" && message.input.attack) {
         const record = wire.attacks.get(message.input.seq);
         if (record) record.atReceipt = wire.raw;
       }
       server.send(payload);
     });
+    wire.holdOutgoing = (ms) => outgoing.hold(ms);
     server.onMessage((payload) => {
       const message = JSON.parse(payload.toString());
       if (message.type === "snapshot") wire.raw = message;
@@ -207,6 +260,62 @@ const hits = (a, b) =>
   [...a.wire.events.values()].filter(
     (e) => e.type === "hit" && e.actor === a.wire.id && e.target === b.wire.id,
   );
+
+async function movementScenario(browser, rtt, jitter) {
+  const errors = [];
+  const c = await client(browser, "Ходок", rtt, jitter, errors);
+  try {
+    await c.page.locator("#create").click();
+    await c.page.locator("#hud").waitFor({ state: "visible" });
+    await c.page.locator("#menu-button").click();
+    await c.page.locator("#low-quality").check();
+    await c.page.locator("#resume").click();
+    await until(() => c.wire.input?.view, "movement timeline ready");
+    await turn(c, 0);
+    await sleep(500);
+    c.wire.movement = { maxCorrection: 0, maxQueue: 0, samples: 0 };
+    // The initial spawn's centre lane is clear in both directions. Repeated
+    // W/S and sprint cover stop/start and reversal without wall corrections.
+    for (const sprint of [false, true]) {
+      if (sprint) await c.page.keyboard.down("Shift");
+      for (const key of ["w", "s"]) {
+        const start = c.wire.prediction.player.z;
+        await c.page.keyboard.down(key);
+        await until(
+          () => c.wire.input.forward === (key === "w" ? 1 : -1),
+          "movement input",
+        );
+        // TCP head-of-line delay: preserve order but release a burst of moves.
+        c.wire.holdOutgoing(180);
+        await sleep(sprint ? 1000 : 2600);
+        await c.page.keyboard.up(key);
+        await sleep(700);
+        assert.ok(
+          Math.abs(c.wire.prediction.player.z - start) > (sprint ? 5 : 9),
+          "held movement must keep advancing",
+        );
+      }
+      if (sprint) await c.page.keyboard.up("Shift");
+    }
+    const result = c.wire.movement;
+    assert.ok(result.samples > 60, "enough delayed reconciliations observed");
+    assert.ok(
+      result.maxCorrection < 1e-6,
+      `walking snapped by ${result.maxCorrection} m at RTT ${rtt}`,
+    );
+    assert.ok(result.maxQueue < 15, "bursts must not overflow the input queue");
+    await until(
+      () => stateOf(c, c.wire.id).queuedInputs <= 3,
+      "movement backlog drained",
+    );
+    assert.deepEqual(errors, []);
+    console.log(
+      `PASS continuous W/S and sprint at RTT ${rtt} ms, jitter +/-${jitter} ms: ${result.samples} corrections, max ${result.maxCorrection.toFixed(6)} m`,
+    );
+  } finally {
+    await c.context.close();
+  }
+}
 
 async function scenario(browser, targetRTT, jitter) {
   const errors = [];
@@ -323,7 +432,12 @@ async function scenario(browser, targetRTT, jitter) {
     await b.page.keyboard.down("Shift");
     await b.page.keyboard.down("w");
     await sleep(180);
+    const previousAttack = stateOf(a, a.wire.id).lastAttackSeq;
     await a.page.keyboard.press("e");
+    await until(
+      () => stateOf(a, a.wire.id).lastAttackSeq > previousAttack,
+      "sword command accepted within the rewind window",
+    );
     await sleep(900); // Includes windup, active blade sweep and transport delay.
     assert.equal(
       hits(a, b).length,
@@ -361,6 +475,8 @@ async function scenario(browser, targetRTT, jitter) {
         : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
   });
   try {
+    for (const rtt of [0, 100, 200])
+      await movementScenario(browser, rtt, rtt === 200 ? 8 : 0);
     await scenario(browser, 200, 0);
     await scenario(browser, 100, 8);
   } finally {

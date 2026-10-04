@@ -4,6 +4,7 @@ import cases from "../../internal/game/data/movement_cases.json";
 import { shieldActive } from "../combat.ts";
 import {
   AttackFeedback,
+  InputPacer,
   move,
   Prediction,
   SnapshotBuffer,
@@ -208,6 +209,130 @@ const snapshot = (tick: number, players: Player[]): Snapshot => ({
   players,
   events: [],
   projectiles: [],
+});
+
+test("input pacing ignores transit latency and waits for its correction to be acknowledged", () => {
+  const pacer = new InputPacer();
+  let seq = 30;
+  pacer.observe(player({ ack: 1, queuedInputs: 1 }), seq);
+  for (let i = 0; i < 60; i++) assert.equal(pacer.advance(seq++), true);
+
+  pacer.observe(player({ ack: 70, queuedInputs: 8 }), seq);
+  let skipped = 0;
+  for (let i = 0; i < 28; i++) {
+    if (pacer.advance(seq)) seq++;
+    else skipped++;
+    // Old reports must not repeatedly schedule the same correction.
+    pacer.observe(player({ ack: 80, queuedInputs: 8 }), seq);
+  }
+  assert.equal(skipped, 7);
+  for (let i = 0; i < 24; i++) {
+    pacer.observe(player({ ack: seq - 1, queuedInputs: 6 }), seq);
+    assert.equal(pacer.advance(seq), true);
+  }
+  // A fresh report after all skipped ticks may schedule a new adjustment.
+  pacer.observe(player({ ack: seq + 1, queuedInputs: 4 }), seq + 2);
+  assert.deepEqual(
+    Array.from({ length: 4 }, () => pacer.advance(seq + 2)),
+    [true, true, true, false],
+  );
+  pacer.reset(); // Reconnect/respawn must not inherit debt or the ACK barrier.
+  for (let i = 0; i < 16; i++) assert.equal(pacer.advance(0), true);
+  for (const queuedInputs of [0, 2, 3, 2])
+    pacer.observe(player({ queuedInputs }), 10);
+  for (let i = 0; i < 16; i++) assert.equal(pacer.advance(10), true);
+  // Two permanently waiting commands cost up to 50 ms before a fresh attack
+  // can execute. Remove that backlog even though it never reaches burst size.
+  for (let i = 0; i < 4; i++) pacer.observe(player({ queuedInputs: 2 }), 10);
+  assert.deepEqual(
+    Array.from({ length: 4 }, () => pacer.advance(10)),
+    [true, true, true, false],
+  );
+});
+
+test("walk prediction stays continuous and drains bursts at RTT 0, 100 and 200 ms", () => {
+  for (const [oneWay, jitter] of [
+    [0, 0],
+    [3, 0],
+    [6, 0],
+    [0, 2],
+    [3, 2],
+    [6, 2],
+  ]) {
+    for (const sprint of [false, true]) {
+      const pacer = new InputPacer(),
+        prediction = new Prediction();
+      const authoritative = player();
+      prediction.reset(authoritative);
+      const inFlight: { due: number; command: Input }[] = [];
+      const reports: { due: number; tick: number; state: Player }[] = [];
+      const queue: Input[] = [];
+      let seq = 0,
+        deliveryTick = 0,
+        maxQueue = 0,
+        totalSkipped = 0;
+      for (let tick = 1; tick <= 300; tick++) {
+        // A render stall batches five steps, then ordered network jitter
+        // bunches delivery. Normal frame batching continues at two steps.
+        const generated =
+          tick === 30 ? 5 : tick > 25 && tick < 30 ? 0 : tick % 2 === 0 ? 2 : 0;
+        for (let i = 0; i < generated; i++) {
+          if (!pacer.advance(seq)) {
+            totalSkipped++;
+            continue;
+          }
+          const command = input({
+            seq: ++seq,
+            forward: tick < 150 ? 1 : -1,
+            sprint,
+          });
+          prediction.advance(command, true, false);
+          deliveryTick = Math.max(
+            deliveryTick,
+            tick + oneWay + (tick % 12 < 4 ? jitter : 0),
+          );
+          inFlight.push({ due: deliveryTick, command });
+        }
+        while (inFlight[0]?.due <= tick) queue.push(inFlight.shift()!.command);
+        const command = queue.shift();
+        move(authoritative, command ?? input());
+        if (command) authoritative.ack = command.seq;
+        maxQueue = Math.max(maxQueue, queue.length);
+        if (tick % 3 === 0)
+          reports.push({
+            due: tick + oneWay,
+            tick,
+            state: { ...authoritative, queuedInputs: queue.length },
+          });
+        while (reports[0]?.due <= tick) {
+          const report = reports.shift()!;
+          pacer.observe(report.state, seq);
+          const before = prediction.player!;
+          prediction.reconcile(report.state, true, report.tick, false);
+          assert.ok(
+            Math.hypot(
+              before.x - prediction.player!.x,
+              before.z - prediction.player!.z,
+            ) < 1e-8,
+            `RTT ${oneWay * 2} ticks, sprint ${sprint}, correction at tick ${tick}`,
+          );
+        }
+      }
+      assert.ok(
+        maxQueue < 15,
+        "ordinary jitter must not overflow the server queue",
+      );
+      assert.ok(
+        queue.length <= 3,
+        "queue must return to the frame batching allowance",
+      );
+      assert.ok(
+        totalSkipped > 0 && totalSkipped < (jitter ? 30 : 10),
+        `only excess backlog is paced: RTT ${oneWay * 2} ticks, jitter ${jitter}, skipped ${totalSkipped}`,
+      );
+      assert.ok(seq > 270, "sustained walk must retain its normal speed");
+    }
+  }
 });
 
 for (const scenario of cases) {
