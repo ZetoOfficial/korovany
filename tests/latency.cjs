@@ -159,13 +159,24 @@ function displayed(wire, targetID, record) {
 
 async function turn(client, yaw, pitch = 0) {
   const current = client.wire.input?.yaw ?? client.wire.prediction.player.yaw;
-  await client.page.mouse.move(320, 240);
-  await client.page.mouse.down({ button: "right" });
-  await client.page.mouse.move(
-    320 + wrap(current - yaw) / 0.0022,
-    240 - (pitch - (client.wire.input?.pitch ?? 0)) / 0.0022,
+  let dx = wrap(current - yaw) / 0.0022,
+    dy = -(pitch - (client.wire.input?.pitch ?? 0)) / 0.0022;
+  // Drag-look only receives movement inside the viewport. A 180-degree turn
+  // takes several short drags; one out-of-window move can leave the old heading.
+  while (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+    const x = Math.max(-200, Math.min(200, Math.round(dx))),
+      y = Math.max(-150, Math.min(150, Math.round(dy)));
+    await client.page.mouse.move(320, 240);
+    await client.page.mouse.down({ button: "right" });
+    await client.page.mouse.move(320 + x, 240 + y);
+    await client.page.mouse.up({ button: "right" });
+    dx -= x;
+    dy -= y;
+  }
+  await until(
+    () => Math.abs(wrap((client.wire.input?.yaw ?? current) - yaw)) < 0.004,
+    "drag-look reaches the requested heading",
   );
-  await client.page.mouse.up({ button: "right" });
 }
 
 async function aim(a, b, bow = false) {
@@ -294,7 +305,7 @@ async function scenario(browser, targetRTT, jitter) {
     };
     await a.page.keyboard.down("Shift");
     await a.page.keyboard.down("w");
-    const walkDeadline = Date.now() + 18000;
+    const walkDeadline = Date.now() + 60000;
     while (distance() > 5 && Date.now() < walkDeadline) {
       await aim(a, b);
       await sleep(60);
@@ -345,9 +356,9 @@ async function scenario(browser, targetRTT, jitter) {
     headless: true,
     channel: "chromium",
     args:
-      process.platform === "darwin"
+      process.platform === "darwin" && !process.env.KOROVANY_SOFTWARE_RENDERING
         ? ["--use-angle=metal"]
-        : ["--enable-unsafe-swiftshader"],
+        : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
   });
   try {
     await scenario(browser, 200, 0);

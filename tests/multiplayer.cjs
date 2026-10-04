@@ -46,15 +46,15 @@ async function until(condition, label, timeout = 10000) {
     headless: true,
     channel: "chromium",
     args:
-      process.platform === "darwin"
+      process.platform === "darwin" && !process.env.KOROVANY_SOFTWARE_RENDERING
         ? ["--use-angle=metal"]
-        : ["--enable-unsafe-swiftshader"],
+        : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
   });
   try {
     const errors = [];
     async function client(name) {
       const context = await browser.newContext({
-        viewport: { width: 960, height: 720 },
+        viewport: { width: 640, height: 480 },
       });
       // Exercise the supported drag-look fallback consistently across headless
       // platforms. Pointer-lock acquisition changes synthetic mouse deltas on
@@ -69,10 +69,21 @@ async function until(condition, label, timeout = 10000) {
           );
       });
       const page = await context.newPage();
-      const wire = { id: "", state: null, welcomes: 0, server: null };
+      const wire = {
+        id: "",
+        state: null,
+        welcomes: 0,
+        server: null,
+        input: null,
+      };
       page.on("pageerror", (error) => errors.push(error.message));
       await page.routeWebSocket("**/ws/*", (socket) => {
         const server = (wire.server = socket.connectToServer());
+        socket.onMessage((payload) => {
+          const message = JSON.parse(payload.toString());
+          if (message.type === "input") wire.input = message.input;
+          server.send(payload);
+        });
         server.onMessage((payload) => {
           const message = JSON.parse(payload.toString());
           if (message.type === "welcome") {
@@ -126,7 +137,7 @@ async function until(condition, label, timeout = 10000) {
       "bow equipped",
     );
     await a.page.locator("#weapon-name").filter({ hasText: "ЛУК" }).waitFor();
-    await a.page.mouse.move(480, 360);
+    await a.page.mouse.move(320, 240);
     await a.page.mouse.down({ button: "right" });
     const archer = a.wire.state.players.find((p) => p.id === a.wire.id);
     const mark = a.wire.state.players.find((p) => p.id === b.wire.id);
@@ -136,8 +147,8 @@ async function until(condition, label, timeout = 10000) {
       Math.cos(archer.yaw - aimYaw),
     );
     await a.page.mouse.move(
-      480 + Math.round(yawDelta / 0.0022),
-      360 - Math.round((ballisticPitch(archer, mark) - archer.pitch) / 0.0022),
+      320 + Math.round(yawDelta / 0.0022),
+      240 - Math.round((ballisticPitch(archer, mark) - archer.pitch) / 0.0022),
     );
     await a.page.mouse.up({ button: "right" });
     await until(
@@ -150,7 +161,7 @@ async function until(condition, label, timeout = 10000) {
     if (process.env.KOROVANY_SCREENSHOT)
       await a.page.screenshot({ path: process.env.KOROVANY_SCREENSHOT });
     // A tap must not spend ammo; a held button must not auto-fire.
-    await a.page.mouse.click(480, 360);
+    await a.page.mouse.click(320, 240);
     await sleep(250);
     assert.equal(
       a.wire.state.players.find((p) => p.id === a.wire.id).arrows,
@@ -161,7 +172,14 @@ async function until(condition, label, timeout = 10000) {
       () =>
         a.wire.state.players.find((p) => p.id === a.wire.id).bowDrawTicks >= 20,
       "draw before menu",
-    );
+    ).catch(async (error) => {
+      console.error("Bow input state:", {
+        input: a.wire.input,
+        player: a.wire.state.players.find((p) => p.id === a.wire.id),
+        fps: await a.page.locator("#fps").textContent(),
+      });
+      throw error;
+    });
     await a.page.keyboard.press("p");
     await a.page.keyboard.up("e");
     await a.page.locator("#pause").waitFor({ state: "visible" });
@@ -227,8 +245,16 @@ async function until(condition, label, timeout = 10000) {
     await until(
       () => distance() < 5,
       "player reaches opponent through real keyboard input",
-      15000,
-    );
+      60000,
+    ).catch(async (error) => {
+      console.error("Movement state:", {
+        fighters: fighters(),
+        distance: distance(),
+        fps: await a.page.locator("#fps").textContent(),
+        input: a.wire.input,
+      });
+      throw error;
+    });
     await a.page.keyboard.up("Shift");
     await until(() => distance() < 1.9, "walking into melee range");
     await a.page.keyboard.up("w");
@@ -248,11 +274,11 @@ async function until(condition, label, timeout = 10000) {
       distance() < 3.2 && Math.abs(angleError()) < 0.85,
       `not aimed at opponent: distance=${distance()}, angle=${angleError()}`,
     );
-    await a.page.mouse.move(480, 360);
+    await a.page.mouse.move(320, 240);
     await a.page.mouse.down({ button: "right" });
     await a.page.mouse.move(
-      480,
-      360 + Math.round(fighters()[0].pitch / 0.0022),
+      320,
+      240 + Math.round(fighters()[0].pitch / 0.0022),
     );
     await a.page.mouse.up({ button: "right" });
     await a.page.keyboard.down("e");
@@ -340,11 +366,11 @@ async function until(condition, label, timeout = 10000) {
       Math.sin(trainee.yaw - dummyYaw),
       Math.cos(trainee.yaw - dummyYaw),
     );
-    await a.page.mouse.move(480, 360);
+    await a.page.mouse.move(320, 240);
     await a.page.mouse.down({ button: "right" });
     await a.page.mouse.move(
-      480 + Math.round(turnToDummy / 0.0022),
-      360 -
+      320 + Math.round(turnToDummy / 0.0022),
+      240 -
         Math.round((ballisticPitch(trainee, dummy) - trainee.pitch) / 0.0022),
     );
     await a.page.mouse.up({ button: "right" });
