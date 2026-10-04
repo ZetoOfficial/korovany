@@ -61,7 +61,7 @@ async function client(browser, name, rtt, jitter, errors) {
   const context = await browser.newContext({
     viewport: { width: 640, height: 480 },
     // Measure network behavior without spending the rewind budget on software
-    // rasterization. Multiplayer tests exercise the normal pixel density.
+    // rasterization. Keep the normal CSS viewport for real mouse input.
     deviceScaleFactor: 0.25,
   });
   await context.addInitScript(() => {

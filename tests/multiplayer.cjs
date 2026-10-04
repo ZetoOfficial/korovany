@@ -55,6 +55,13 @@ async function until(condition, label, timeout = 10000) {
     async function client(name) {
       const context = await browser.newContext({
         viewport: { width: 640, height: 480 },
+        // Software-only CI must still render quickly enough for the server's
+        // view-age checks. Keep the same CSS layout and normal density on GPU.
+        deviceScaleFactor:
+          process.platform === "darwin" &&
+          !process.env.KOROVANY_SOFTWARE_RENDERING
+            ? 1
+            : 0.25,
       });
       // Exercise the supported drag-look fallback consistently across headless
       // platforms. Pointer-lock acquisition changes synthetic mouse deltas on
