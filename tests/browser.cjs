@@ -9,6 +9,12 @@ const { chromium } = require("playwright");
   const page = await browser.newPage({
     viewport: { width: 1280, height: 800 },
   });
+  // Use the supported drag-look fallback, as in the multiplayer suite. Rapid
+  // modal toggles must not race headless pointer-lock enter/exit callbacks.
+  await page.addInitScript(() => {
+    HTMLCanvasElement.prototype.requestPointerLock = () =>
+      Promise.reject(new DOMException("Test drag look", "NotSupportedError"));
+  });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
