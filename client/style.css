@@ -544,6 +544,32 @@ input:focus-visible {
   border-bottom: 1px solid var(--line);
   padding: 16px 0;
 }
+.sound-settings {
+  border: 1px solid var(--line);
+  margin: 22px 0;
+  padding: 4px 14px 14px;
+}
+.sound-settings legend {
+  padding: 0 6px;
+  font-size: 14px;
+  color: var(--gold);
+}
+.sound-settings .quality {
+  margin: 12px 0 18px;
+}
+.sound-volume {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+#sound-volume {
+  width: 100%;
+  margin: 12px 0 0;
+  accent-color: var(--gold);
+}
+#sound-volume:disabled {
+  opacity: 0.4;
+}
 .dummy-controls h3 {
   margin: 0;
   font-size: 15px;

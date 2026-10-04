@@ -150,6 +150,27 @@
           ><input id="trajectory-preview" type="checkbox" checked /> Траектория
           лука (тест)</label
         >
+        <fieldset class="sound-settings">
+          <legend>Звук</legend>
+          <label class="quality"
+            ><input id="sound-enabled" type="checkbox" checked /> 8-битные звуки
+            боя и событий</label
+          >
+          <label class="sound-volume" for="sound-volume"
+            >Громкость
+            <output id="sound-volume-value" for="sound-volume"
+              >45%</output
+            ></label
+          >
+          <input
+            id="sound-volume"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="45"
+          />
+        </fieldset>
         <section class="dummy-controls" aria-labelledby="dummy-title">
           <h3 id="dummy-title">Манекены <span id="dummy-count">0</span></h3>
           <p>

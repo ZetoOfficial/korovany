@@ -11,6 +11,8 @@ import {
 } from "./simulation.ts";
 import { SeppukuPresentation } from "./seppuku.ts";
 import { roundWinners } from "./results.ts";
+import { ArenaAudio } from "./audio.ts";
+import { ArenaSoundEvents } from "./audio-events.ts";
 import {
   interpolationTicks,
   rules,
@@ -41,11 +43,25 @@ const prediction = new Prediction(),
   snapshots = new SnapshotBuffer();
 let feedback = new AttackFeedback();
 let displayedView: ViewTime | undefined;
-const seppuku = new SeppukuPresentation();
+const audio = new ArenaAudio();
+const soundEvents = new ArenaSoundEvents((cue) => audio.play(cue));
+const seppuku = new SeppukuPresentation(audio);
 let seppukuPending = false;
 
-function animateAttack(life: number, seq: number, weapon: number, now: number) {
-  if (feedback.take(life, seq)) view.attack(weapon, now);
+function animateAttack(
+  life: number,
+  seq: number,
+  weapon: number,
+  now: number,
+  audible = true,
+) {
+  if (feedback.take(life, seq)) {
+    view.attack(weapon, now);
+    if (audible) {
+      audio.setBowDraw(0);
+      audio.play(weapon === 2 ? "shot" : "swing");
+    }
+  }
 }
 let connection: MatchConnection | null = null;
 let snapshot: Snapshot | null = null;
@@ -74,6 +90,7 @@ function setMenu(open: boolean) {
   closeSeppukuConfirm();
   controls.setEnabled(!open && online);
   if (open) {
+    audio.setBowDraw(0);
     document.exitPointerLock?.();
     el("resume").focus();
   } else if ((prediction.player?.health ?? 0) > 0) void controls.capture();
@@ -143,6 +160,8 @@ function manageDummies(action: DummyAction) {
 }
 
 function leave(message = "Создай комнату или введи код приглашения.") {
+  audio.stop();
+  soundEvents.reset();
   connection?.close();
   connection = null;
   self = "";
@@ -179,6 +198,8 @@ function leave(message = "Создай комнату или введи код �
 
 function receive(next: Snapshot) {
   if (snapshot && next.tick <= snapshot.tick) return;
+  const initial = !snapshot;
+  soundEvents.receive(next, self);
   snapshot = next;
   updateDummyControls();
   lastSnapshot = performance.now();
@@ -222,6 +243,7 @@ function receive(next: Snapshot) {
         player.lastAttackSeq,
         player.attackWeapon,
         performance.now() / 1000,
+        !initial,
       );
   }
   for (const event of next.events) {
@@ -264,6 +286,8 @@ function receive(next: Snapshot) {
 }
 
 function welcome(message: Welcome) {
+  audio.stop();
+  soundEvents.reset();
   dummyPending = false;
   el("dummy-status").textContent = "";
   self = message.id;
@@ -314,6 +338,7 @@ async function join(makeRoom: boolean) {
       status(message, connected) {
         online = connected;
         if (!connected) {
+          audio.stop();
           dummyPending = false;
           seppukuPending = false;
         }
@@ -377,7 +402,7 @@ el("seppuku-cancel").addEventListener("click", () => {
 el("seppuku-accept").addEventListener("click", () => {
   const player = snapshot?.players.find((p) => p.id === self);
   if (!player || seppukuPending) return;
-  if (el<HTMLInputElement>("seppuku-sound").checked) seppuku.unlockAudio();
+  audio.unlock();
   seppukuPending = connection?.seppuku(player.life) ?? false;
   el("seppuku-status").textContent = seppukuPending
     ? "Ждём ответ сервера…"
@@ -406,7 +431,42 @@ el("copy-room").addEventListener("click", async () => {
     el("copy-status").textContent = `Передай друзьям код ${room}`;
   }
 });
-window.addEventListener("pagehide", () => connection?.close());
+const soundEnabled = el<HTMLInputElement>("sound-enabled");
+const soundVolume = el<HTMLInputElement>("sound-volume");
+const ceremonySound = el<HTMLInputElement>("seppuku-sound");
+function syncSoundSettings() {
+  soundEnabled.checked = audio.settings.enabled;
+  soundVolume.value = String(Math.round(audio.settings.volume * 100));
+  el("sound-volume-value").textContent = `${soundVolume.value}%`;
+  soundVolume.disabled = !audio.settings.enabled;
+  ceremonySound.checked = audio.settings.seppuku;
+}
+syncSoundSettings();
+soundEnabled.addEventListener("change", () => {
+  audio.configure({ enabled: soundEnabled.checked });
+  audio.unlock();
+  syncSoundSettings();
+});
+soundVolume.addEventListener("input", () => {
+  audio.configure({ volume: Number(soundVolume.value) / 100 });
+  syncSoundSettings();
+});
+soundVolume.addEventListener("change", () => audio.play("countdown"));
+ceremonySound.addEventListener("change", () =>
+  audio.configure({ seppuku: ceremonySound.checked }),
+);
+// AudioContext must be unlocked directly by a user gesture, before network awaits.
+window.addEventListener("pointerdown", () => audio.unlock(), { capture: true });
+window.addEventListener("keydown", () => audio.unlock(), { capture: true });
+window.addEventListener("blur", () => audio.setFocused(false));
+window.addEventListener("focus", () => audio.setFocused(!document.hidden));
+document.addEventListener("visibilitychange", () =>
+  audio.setFocused(!document.hidden && document.hasFocus()),
+);
+window.addEventListener("pagehide", () => {
+  audio.stop();
+  connection?.close();
+});
 // Keep keyboard focus inside the menu while it is open.
 pause.addEventListener("keydown", (event) => {
   if (event.key === "Escape" || event.code === "KeyP") {
@@ -558,6 +618,12 @@ function frame(now: number) {
       input.life = prediction.player.life;
       input.view = displayedView;
       if (connection.send(input)) {
+        soundEvents.input(
+          input,
+          prediction.player,
+          prediction.currentTick + 1,
+          controls.enabled && snapshot?.phase === "playing",
+        );
         if (prediction.advance(input, !!active, snapshot?.phase === "playing"))
           animateAttack(
             prediction.player.life,
@@ -596,6 +662,15 @@ function frame(now: number) {
     tick,
   );
   const draw = prediction.player?.bowDrawTicks ?? 0;
+  audio.setBowDraw(
+    healthy &&
+      controls.enabled &&
+      snapshot?.phase === "playing" &&
+      prediction.player?.weapon === 2 &&
+      canBow(prediction.player)
+      ? draw / rules.bowDrawTicks
+      : 0,
+  );
   el("bow-charge").hidden =
     !healthy ||
     menuOpen ||

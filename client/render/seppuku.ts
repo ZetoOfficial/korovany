@@ -4,9 +4,9 @@ import { box } from "./primitives.ts";
 import { combat, limbMissing } from "../combat.ts";
 import { factionColors } from "./characters.ts";
 import { type Player, world } from "../protocol.ts";
+import { seppukuImpact } from "../seppuku-timing.ts";
 
-export const seppukuImpact = 2.15;
-export const seppukuDuration = 5.4;
+export { seppukuImpact, seppukuDuration } from "../seppuku-timing.ts";
 export const ease = (start: number, end: number, age: number) => {
   const t = THREE.MathUtils.clamp((age - start) / (end - start), 0, 1);
   return t * t * (3 - 2 * t);
