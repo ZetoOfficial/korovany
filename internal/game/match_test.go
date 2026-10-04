@@ -67,10 +67,11 @@ func TestAttackAndBlockAreAuthoritative(t *testing.T) {
 	m.Input(a.ID, Input{Seq: 1, Attack: true})
 	m.Input(b.ID, Input{Seq: 1, Block: true, Yaw: math.Pi})
 	m.Step()
+	resolveSword(t, m, a)
 	if b.Health != 91 {
 		t.Fatalf("front block should reduce damage, health=%v", b.Health)
 	}
-	for n := uint64(2); n < 20; n++ {
+	for n := uint64(2); n < 10; n++ {
 		m.Input(a.ID, Input{Seq: n, Attack: true})
 		m.Step()
 	}
@@ -79,9 +80,12 @@ func TestAttackAndBlockAreAuthoritative(t *testing.T) {
 	}
 	// Blocking the wrong direction does not protect the defender.
 	m.Tick += 40
+	b.Z = -2
+	b.ImpulseX, b.ImpulseZ = 0, 0
 	m.Input(a.ID, Input{Seq: 20, Attack: true})
 	m.Input(b.ID, Input{Seq: 2, Block: true, Yaw: 0})
 	m.Step()
+	resolveSword(t, m, a)
 	if b.Health != 56 {
 		t.Fatalf("rear hit should do full damage: %v", b.Health)
 	}
@@ -105,6 +109,7 @@ func TestAttacksRespectRangeWallsAndSpawnProtection(t *testing.T) {
 			}
 			m.Input(a.ID, Input{Seq: 1, Attack: true})
 			m.Step()
+			resolveSword(t, m, a)
 			if b.Health != 100 {
 				t.Fatalf("%s did not prevent damage: %v", kind, b.Health)
 			}
@@ -117,6 +122,7 @@ func TestDeathRespawnAndWin(t *testing.T) {
 	b.Health = 30
 	m.Input(a.ID, Input{Seq: 1, Attack: true})
 	m.Step()
+	resolveSword(t, m, a)
 	if b.Health != 0 || b.Deaths != 1 || a.Kills != 1 {
 		t.Fatalf("invalid kill: %+v %+v", a, b)
 	}

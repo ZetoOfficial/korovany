@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PvP · Проверка анимации</title>
+    <style>
+      body {
+        margin: 0;
+        background: #182823;
+        color: #f4e6be;
+        font: 14px system-ui;
+      }
+      canvas {
+        display: block;
+      }
+      aside {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        padding: 18px;
+        background: #182823ee;
+        border-radius: 8px;
+        max-width: 370px;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+      }
+      input {
+        width: 100%;
+      }
+      button {
+        margin-top: 12px;
+      }
+      #crosshair {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        font: 24px serif;
+        color: #fff8dc;
+      }
+      p {
+        margin: 8px 0;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="world"></canvas>
+    <div id="crosshair">+</div>
+    <aside>
+      <b>Проверка PvP · анимация и травмы</b>
+      <p>Та же модель и анимация, что используются в матче.</p>
+      <label
+        >Фаза удара
+        <input
+          id="age"
+          type="range"
+          min="0"
+          max="32"
+          step=".1"
+          value="0" /></label
+      ><output id="phase"></output>
+      <label
+        >Состояние цели
+        <select id="injury">
+          <option value="healthy">Без травм</option>
+          <option value="arm">Без левой руки</option>
+          <option value="leg">Без левой ноги</option>
+          <option value="bow">Натянутый лук</option>
+        </select></label
+      >
+      <button id="play">Проиграть взмах</button>
+    </aside>
+    <script type="module" src="./combat-preview.ts"></script>
+  </body>
+</html>

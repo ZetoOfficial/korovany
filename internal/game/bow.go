@@ -52,7 +52,7 @@ func (m *Match) updateBow(p *Player, q queuedInput) {
 	if q.Seq != 0 {
 		p.lastBowInputTick = m.Tick
 	}
-	if q.CancelAttack || !p.Connected || m.Phase != "playing" || p.Health <= 0 || p.Arrows <= 0 || p.Stamina < r.BowCost || m.Tick < p.NextAttackTick || m.Tick-p.lastBowInputTick > uint64(r.TickRate)/4 {
+	if !p.canBow() || q.CancelAttack || !p.Connected || m.Phase != "playing" || p.Health <= 0 || p.Arrows <= 0 || p.Stamina < r.BowCost || m.Tick < p.NextAttackTick || m.Tick-p.lastBowInputTick > uint64(r.TickRate)/4 {
 		p.BowDrawTicks = 0
 		return
 	}
@@ -120,12 +120,13 @@ func (m *Match) stepProjectiles() {
 			}
 		}
 		var target *Player
+		var contact BodyHit
 		for _, other := range players {
 			if other.ID == arrow.Actor || other.Health <= 0 {
 				continue
 			}
-			if d, hit := rayBox(start, direction, Vec3{other.X - r.Radius, other.Y, other.Z - r.Radius}, Vec3{other.X + r.Radius, other.Y + 2.2, other.Z + r.Radius}, nearest); hit && (d < nearest || reason == "") {
-				target, nearest, reason = other, d, "player"
+			if hit, ok := bodyHit(other, float64(m.Tick), r, start, direction, nearest, 0); ok && (hit.Distance < nearest || reason == "") {
+				target, nearest, reason, contact = other, hit.Distance, "player", hit
 			}
 		}
 		arrow.Position = Vec3{start.X + direction.X*nearest, start.Y + direction.Y*nearest, start.Z + direction.Z*nearest}
@@ -142,7 +143,7 @@ func (m *Match) stepProjectiles() {
 			} else {
 				// Blocking faces the incoming arrow, even if its shooter has moved.
 				source := Vec3{target.X - direction.X, target.Y, target.Z - direction.Z}
-				m.damageFrom(owner, target, arrow.damage, arrow.diagnostic, source, arrow.Seq, arrow.Life)
+				m.damageFrom(owner, target, arrow.damage, arrow.diagnostic, source, arrow.Seq, arrow.Life, contact)
 			}
 		}
 	}

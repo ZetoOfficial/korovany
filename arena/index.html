@@ -97,6 +97,7 @@
         <div class="draw-track"><i id="bow-charge-fill"></i></div>
         <small id="bow-charge-text">Зажми ЛКМ / E</small>
       </div>
+      <div id="hit-detail" hidden role="status"></div>
       <div id="hit-marker" hidden aria-hidden="true">×</div>
       <div id="center-notice" role="status"></div>
       <div id="feed" role="log" aria-label="События матча"></div>
@@ -105,6 +106,8 @@
         <div class="bar health"><i id="health-bar"></i></div>
         <div class="bar stamina"><i id="stamina-bar"></i></div>
         <p id="shield-status"></p>
+        <p id="injury-status" role="status"></p>
+        <p id="injury-effects"></p>
       </div>
       <div class="weapon-label">
         <span id="weapon-number">01</span
@@ -133,6 +136,11 @@
         <h2 id="pause-title">Перевести дух</h2>
         <p>
           Матч продолжается, пока открыто меню. Твой боец остаётся на арене.
+        </p>
+        <p>
+          Меч: замах → удар → восстановление. Целься выше для удара в голову,
+          ниже — по ногам. Потеря руки отключает лук, потеря ноги — движение.
+          Конечности восстанавливаются при возрождении.
         </p>
         <button id="resume" class="primary">ВЕРНУТЬСЯ В БОЙ →</button>
         <label class="quality"

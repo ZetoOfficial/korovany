@@ -1,3 +1,4 @@
+import { canBow } from "../combat.ts";
 import * as THREE from "three";
 import { rules, type Player } from "../protocol.ts";
 import { traceBowTrajectory } from "../trajectory.ts";
@@ -46,6 +47,7 @@ export class BowTrajectory {
       player &&
       player.health > 0 &&
       player.weapon === 2 &&
+      canBow(player) &&
       player.arrows > 0 &&
       player.stamina >= rules.bowCost &&
       player.bowDrawTicks >= rules.bowMinDrawTicks

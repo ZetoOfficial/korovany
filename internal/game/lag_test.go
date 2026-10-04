@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// The client saw the opponent in sword range. During 200 ms RTT plus
-// 100 ms interpolation the opponent sprinted another 2.7 m away.
-func TestMovingTargetAt200ms(t *testing.T) {
+// A target leaving reach during the windup can dodge even a compensated sword.
+func TestMovingTargetDodgesWindupAt200ms(t *testing.T) {
 	m, a, b := readyMatch(t)
 	b.Z = -2.6
 	m.Snapshot()
@@ -18,8 +17,9 @@ func TestMovingTargetAt200ms(t *testing.T) {
 	m.SetLatency(a.ID, 0.2, 0)
 	m.Input(a.ID, Input{Seq: 1, Attack: true, View: view})
 	m.Step()
-	if b.Health != 65 {
-		t.Fatalf("attack aimed at the displayed target missed: health=%v", b.Health)
+	resolveSword(t, m, a)
+	if b.Health != 100 {
+		t.Fatalf("windup froze historical target: health=%v", b.Health)
 	}
 }
 
@@ -34,7 +34,7 @@ func historicalMatch(t *testing.T, weapon int, rtt float64) (*Match, *Player, *P
 		if weapon == Bow {
 			b.X, b.Z = travel, -20
 		} else {
-			b.X, b.Z = 0, -2.6-travel
+			b.X, b.Z = 0, -2
 		}
 		m.Snapshot()
 	}
@@ -48,10 +48,11 @@ func TestHistoricalMovingHitsAtDifferentRTT(t *testing.T) {
 	for _, rtt := range []float64{0, .1, .2} {
 		t.Run(fmt.Sprintf("rtt%.0f", rtt*1000), func(t *testing.T) {
 			m, a, b, input := historicalMatch(t, Sword, rtt)
-			input.Forward, input.Jump = 1, true // The attacker also moves and jumps.
+			input.Forward = 1 // Movement is still applied before the windup.
 			x, z := b.X, b.Z
 			m.Input(a.ID, input)
 			m.Step()
+			resolveSword(t, m, a)
 			want := 65.0
 			if b.Health != want || b.X != x || b.Z != z || a.LastAttackSeq != input.Seq || a.LastCombat.Outcome != "hit" {
 				t.Fatalf("historical hit failed or moved target: a=%+v b=%+v", a, b)
@@ -63,6 +64,7 @@ func TestHistoricalMovingHitsAtDifferentRTT(t *testing.T) {
 				t.Fatal("duplicate accepted")
 			}
 			m.Step()
+			resolveSword(t, m, a)
 			if b.Health != want {
 				t.Fatal("duplicate damage")
 			}
@@ -89,7 +91,7 @@ func TestHistoricalDefenseAndLifecycle(t *testing.T) {
 						p.Blocking, p.Yaw = true, 0
 						want = 65
 					case "shield":
-						p.ShieldTick = 230 // Expired now, but visible at the attack's time.
+						p.ShieldTick = 260 // Expired now, but visible at the attack's time.
 					case "jump-miss", "jump-hit":
 						p.Y = 3
 					}
@@ -116,11 +118,12 @@ func TestHistoricalDefenseAndLifecycle(t *testing.T) {
 				m.SetLatency(a.ID, .2, 0)
 				input.Life = a.Life
 			case "jump-hit":
-				a.Y = 2
+				a.Y = 3
 				want = 65
 			}
 			m.Input(a.ID, input)
 			m.Step()
+			resolveSword(t, m, a)
 			if b.Health != want {
 				t.Fatalf("health=%v want=%v diagnostic=%+v", b.Health, want, a.LastCombat)
 			}
@@ -185,6 +188,7 @@ func TestRewindLimitAndJitter(t *testing.T) {
 	m.SetLatency(a.ID, .16, .02) // Smoothed RTT lags a recent 40 ms spike.
 	m.Input(a.ID, input)
 	m.Step()
+	resolveSword(t, m, a)
 	if b.Health != 65 {
 		t.Fatalf("jitter within the budget rejected: %+v", a.LastCombat)
 	}
@@ -192,6 +196,7 @@ func TestRewindLimitAndJitter(t *testing.T) {
 	m, a, b = readyMatch(t)
 	m.Input(a.ID, Input{Seq: 1, Attack: true})
 	m.Step()
+	resolveSword(t, m, a)
 	if b.Health != 65 {
 		t.Fatal("first probe must not prevent uncompensated combat")
 	}
@@ -225,7 +230,8 @@ func TestHistoryInterpolatesActualSnapshotPair(t *testing.T) {
 	}
 	m.Input(a.ID, input)
 	m.Step()
-	if b.Health != 91 {
+	resolveSword(t, m, a)
+	if b.Health != 82 || a.LastCombat.Part != "head" {
 		t.Fatalf("historical block failed: %+v", a.LastCombat)
 	}
 }
@@ -276,12 +282,16 @@ func TestCoalescingPreservesClicksJumpsAndAttackContext(t *testing.T) {
 	m.Input(a.ID, Input{Seq: 4, Yaw: math.Pi})
 	m.Input(a.ID, Input{Seq: 5, Yaw: math.Pi})
 	m.Step()
-	if a.Ack != 2 || a.LastAttackSeq != 2 || b.Health != 65 {
+	if a.Ack != 2 || a.LastAttackSeq != 2 || b.Health != 100 || a.swing == nil {
 		t.Fatalf("isolated click lost its aim/time: %+v", a.LastCombat)
 	}
 	m.Step()
 	if a.Ack != 3 || a.Y <= 0 {
 		t.Fatal("jump edge was lost")
+	}
+	resolveSword(t, m, a)
+	if b.Health != 30 || a.LastCombat.Part != "head" {
+		t.Fatalf("committed swing lost original aim: %+v", a.LastCombat)
 	}
 }
 
@@ -291,10 +301,11 @@ func TestCoalescingPreservesFirstPredictedHeldAttack(t *testing.T) {
 		m.Input(a.ID, Input{Seq: seq, Attack: true})
 	}
 	m.Step()
-	if a.LastAttackSeq != 1 || b.Health != 65 || len(a.queue) > 2 {
+	if a.LastAttackSeq != 1 || b.Health != 100 || a.swing == nil || len(a.queue) > 2 {
 		t.Fatal("first held attack changed identity")
 	}
 	m.Step()
+	resolveSword(t, m, a)
 	if b.Health != 65 {
 		t.Fatal("held repeats bypassed cooldown")
 	}

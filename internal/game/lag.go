@@ -55,6 +55,7 @@ type CombatDiagnostic struct {
 	Seq          uint64  `json:"seq"`
 	Outcome      string  `json:"outcome"`
 	Reason       string  `json:"reason"`
+	Part         string  `json:"part,omitempty"`
 	CommandAgeMS float64 `json:"commandAgeMs"`
 	QueueMS      float64 `json:"queueMs"`
 	RewindMS     float64 `json:"rewindMs"`
@@ -148,6 +149,8 @@ func (m *Match) attackView(p *Player, q queuedInput, d *CombatDiagnostic) ([]*Pl
 			copy.X += (next.X - old.X) * t
 			copy.Y += (next.Y - old.Y) * t
 			copy.Z += (next.Z - old.Z) * t
+			copy.Pitch += (next.Pitch - old.Pitch) * t
+			copy.Gait += (next.Gait - old.Gait) * t
 			copy.Yaw += math.Atan2(math.Sin(next.Yaw-old.Yaw), math.Cos(next.Yaw-old.Yaw)) * t
 			players = append(players, &copy)
 			break

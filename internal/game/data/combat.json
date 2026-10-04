@@ -1,0 +1,121 @@
+{
+  "armHealth": 50,
+  "legHealth": 65,
+  "windupTicks": 9,
+  "strikeTicks": 10,
+  "bladeRadius": 0.035,
+  "bladeBase": [0, -0.73, -0.12],
+  "bladeTip": [0, -0.73, -2.05],
+  "swing": [
+    { "time": 0, "rotation": [0.45, 0, 0] },
+    { "time": 0.28125, "rotation": [0.7, -1.05, -0.18] },
+    { "time": 0.59375, "rotation": [0.3, 1.2, 0.1] },
+    { "time": 1, "rotation": [0.45, 0, 0] }
+  ],
+  "parts": [
+    {
+      "id": "head",
+      "limb": -1,
+      "multiplier": 2,
+      "pivot": [0, 1.88, 0],
+      "boxes": [
+        { "center": [0, 0, 0], "size": [0.4, 0.43, 0.38], "material": "skin" },
+        {
+          "center": [0, 0.22, 0],
+          "size": [0.46, 0.12, 0.44],
+          "material": "cloth"
+        }
+      ]
+    },
+    {
+      "id": "torso",
+      "limb": -1,
+      "multiplier": 1,
+      "pivot": [0, 0, 0],
+      "boxes": [
+        {
+          "center": [0, 1.22, 0],
+          "size": [0.65, 0.75, 0.38],
+          "material": "cloth"
+        },
+        {
+          "center": [0, 0.91, 0],
+          "size": [0.69, 0.13, 0.42],
+          "material": "belt"
+        }
+      ]
+    },
+    {
+      "id": "leftArm",
+      "limb": 0,
+      "multiplier": 0.4,
+      "pivot": [-0.46, 1.5, 0],
+      "boxes": [
+        {
+          "center": [0, -0.32, 0],
+          "size": [0.21, 0.65, 0.25],
+          "material": "cloth"
+        },
+        {
+          "center": [0, -0.67, 0],
+          "size": [0.2, 0.17, 0.2],
+          "material": "skin"
+        }
+      ]
+    },
+    {
+      "id": "rightArm",
+      "limb": 1,
+      "multiplier": 0.4,
+      "pivot": [0.46, 1.5, 0],
+      "boxes": [
+        {
+          "center": [0, -0.32, 0],
+          "size": [0.21, 0.65, 0.25],
+          "material": "cloth"
+        },
+        {
+          "center": [0, -0.67, 0],
+          "size": [0.2, 0.17, 0.2],
+          "material": "skin"
+        }
+      ]
+    },
+    {
+      "id": "leftLeg",
+      "limb": 2,
+      "multiplier": 0.65,
+      "pivot": [-0.19, 0.9, 0],
+      "boxes": [
+        {
+          "center": [0, -0.41, 0],
+          "size": [0.24, 0.78, 0.28],
+          "material": "trousers"
+        },
+        {
+          "center": [0, -0.81, -0.08],
+          "size": [0.28, 0.18, 0.44],
+          "material": "boot"
+        }
+      ]
+    },
+    {
+      "id": "rightLeg",
+      "limb": 3,
+      "multiplier": 0.65,
+      "pivot": [0.19, 0.9, 0],
+      "boxes": [
+        {
+          "center": [0, -0.41, 0],
+          "size": [0.24, 0.78, 0.28],
+          "material": "trousers"
+        },
+        {
+          "center": [0, -0.81, -0.08],
+          "size": [0.28, 0.18, 0.44],
+          "material": "boot"
+        }
+      ]
+    }
+  ]
+}

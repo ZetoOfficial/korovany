@@ -230,7 +230,7 @@ async function until(condition, label, timeout = 10000) {
       15000,
     );
     await a.page.keyboard.up("Shift");
-    await until(() => distance() < 2.7, "walking into melee range");
+    await until(() => distance() < 1.9, "walking into melee range");
     await a.page.keyboard.up("w");
     await sleep(300); // Allow already-sent movement commands to be acknowledged.
     if (Math.abs(angleError()) > 0.12) {
@@ -248,6 +248,13 @@ async function until(condition, label, timeout = 10000) {
       distance() < 3.2 && Math.abs(angleError()) < 0.85,
       `not aimed at opponent: distance=${distance()}, angle=${angleError()}`,
     );
+    await a.page.mouse.move(480, 360);
+    await a.page.mouse.down({ button: "right" });
+    await a.page.mouse.move(
+      480,
+      360 + Math.round(fighters()[0].pitch / 0.0022),
+    );
+    await a.page.mouse.up({ button: "right" });
     await a.page.keyboard.down("e");
     await until(
       () => a.wire.state.players.find((p) => p.id === a.wire.id).kills === 1,

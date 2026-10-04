@@ -300,7 +300,7 @@ async function scenario(browser, targetRTT, jitter) {
       await sleep(60);
     }
     await a.page.keyboard.up("Shift");
-    await until(() => distance() < 2.4, "walking into sword range", 7000);
+    await until(() => distance() < 1.9, "walking into sword range", 7000);
     await a.page.keyboard.up("w");
     await sleep(500);
     await aim(a, b);
@@ -313,10 +313,11 @@ async function scenario(browser, targetRTT, jitter) {
     await b.page.keyboard.down("w");
     await sleep(180);
     await a.page.keyboard.press("e");
-    await until(
-      () => hits(a, b).length > previousHits,
-      "sword hits displayed fleeing opponent",
-      3000,
+    await sleep(900); // Includes windup, active blade sweep and transport delay.
+    assert.equal(
+      hits(a, b).length,
+      previousHits,
+      "a fleeing target can leave reach during the windup",
     );
     await b.page.keyboard.up("w");
     await b.page.keyboard.up("Shift");
@@ -325,7 +326,7 @@ async function scenario(browser, targetRTT, jitter) {
     assert.equal(stateOf(a, a.wire.id).kills, stateOf(b, a.wire.id).kills);
     assert.deepEqual(errors, []);
     console.log(
-      `PASS fleeing sword target at RTT 200/${targetRTT} ms; both clients agree`,
+      `PASS sword windup dodge at RTT 200/${targetRTT} ms; both clients agree`,
     );
   } catch (error) {
     console.error(

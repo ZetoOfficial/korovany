@@ -2,7 +2,7 @@ import arena from "../internal/game/data/arena.json";
 
 export const world = arena;
 export const rules = arena.rules;
-export const protocolVersion = 5;
+export const protocolVersion = 6;
 export const stepSeconds = 1 / rules.tickRate;
 export const interpolationTicks = rules.tickRate * 0.1;
 
@@ -39,14 +39,19 @@ export interface Motion {
   pitch: number;
   stamina: number;
   blocking: boolean;
+  limbDamage?: [number, number, number, number];
+  gait?: number;
+  impulseX?: number;
+  impulseZ?: number;
 }
 
 export interface Player extends Motion {
   lastCombat?: {
     tick: number;
     seq: number;
-    outcome: "rejected" | "miss" | "hit" | "flying";
+    outcome: "rejected" | "miss" | "hit" | "flying" | "swing";
     reason: string;
+    part?: import("./combat.ts").BodyPart;
     commandAgeMs: number;
     queueMs: number;
     rewindMs: number;
@@ -66,6 +71,8 @@ export interface Player extends Motion {
   lastAttackSeq: number;
   nextAttackTick: number;
   attackWeapon: number;
+  attackPitch?: number;
+  attackYaw?: number;
   respawnTick: number;
   shieldTick: number;
   connected: boolean;
@@ -78,6 +85,9 @@ export interface GameEvent {
   actor: string;
   target?: string;
   damage?: number;
+  part?: import("./combat.ts").BodyPart;
+  severed?: boolean;
+  blocked?: boolean;
   seq?: number;
   life?: number;
   from?: { x: number; y: number; z: number };

@@ -28,5 +28,114 @@
     "start": { "x": 0, "z": 10, "stamina": 100 },
     "steps": [{ "count": 1, "input": { "jump": true } }, { "count": 59, "input": {} }],
     "expected": { "x": 0, "z": 10, "y": 0, "stamina": 100 }
+  },
+  {
+    "name": "missing leg prevents walking sprinting and jumping",
+    "start": {
+      "x": 0,
+      "z": 10,
+      "stamina": 100,
+      "limbDamage": [
+        0,
+        0,
+        65,
+        0
+      ]
+    },
+    "steps": [
+      {
+        "count": 60,
+        "input": {
+          "forward": 1,
+          "strafe": 1,
+          "sprint": true,
+          "jump": true
+        }
+      }
+    ],
+    "expected": {
+      "x": 0,
+      "z": 10,
+      "y": 0,
+      "stamina": 100
+    }
+  },
+  {
+    "name": "injured leg progressively slows movement",
+    "start": {
+      "x": 0,
+      "z": 10,
+      "stamina": 100,
+      "limbDamage": [
+        0,
+        0,
+        32.5,
+        0
+      ]
+    },
+    "steps": [
+      {
+        "count": 60,
+        "input": {
+          "forward": 1
+        }
+      }
+    ],
+    "expected": {
+      "x": 0,
+      "z": 5.97,
+      "y": 0,
+      "stamina": 100
+    }
+  },
+  {
+    "name": "lost sword arm prevents blocking and block regen",
+    "start": {
+      "x": 0,
+      "z": 10,
+      "stamina": 50,
+      "limbDamage": [
+        0,
+        50,
+        0,
+        0
+      ]
+    },
+    "steps": [
+      {
+        "count": 60,
+        "input": {
+          "block": true,
+          "weapon": 1
+        }
+      }
+    ],
+    "expected": {
+      "x": 0,
+      "z": 10,
+      "y": 0,
+      "stamina": 69
+    }
+  },
+  {
+    "name": "knockback decays and stops at cover",
+    "start": {
+      "x": -6.4,
+      "z": -6,
+      "stamina": 100,
+      "impulseX": -3
+    },
+    "steps": [
+      {
+        "count": 60,
+        "input": {}
+      }
+    ],
+    "expected": {
+      "x": -6.539996015816,
+      "z": -6,
+      "y": 0,
+      "stamina": 100
+    }
   }
 ]

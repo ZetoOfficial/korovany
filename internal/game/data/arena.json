@@ -1,5 +1,5 @@
 {
-  "version": "tract-3",
+  "version": "tract-4",
   "name": "Схватка на тракте",
   "bounds": { "x": 24, "z": 30 },
   "rules": {
@@ -22,7 +22,6 @@
     "blockRegen": 4,
     "attackCost": 12,
     "attackTicks": 32,
-    "attackRange": 3.2,
     "attackDamage": 35,
     "bowCost": 8,
     "bowTicks": 24,

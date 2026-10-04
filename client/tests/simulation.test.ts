@@ -198,9 +198,11 @@ for (const scenario of cases) {
       pitch: 0,
       blocking: false,
       ...scenario.start,
+      limbDamage: scenario.start.limbDamage as Motion["limbDamage"],
     };
     for (const step of scenario.steps)
-      for (let n = 0; n < step.count; n++) move(p, input(step.input));
+      for (let n = 0; n < step.count; n++)
+        move(p, input(step.input as Partial<Input>));
     for (const key of ["x", "y", "z", "stamina"] as const)
       assert.ok(
         Math.abs(p[key] - scenario.expected[key]) < 1e-8,
@@ -367,4 +369,76 @@ test("projectiles render on the same curved timeline as remote players and disap
   assert.equal(buffer.sampleView(106).projectiles.length, 0);
   buffer.clear();
   assert.equal(buffer.sampleView(107).projectiles.length, 0);
+});
+
+test("injuries constrain predicted actions and reconcile without healing or mutating snapshots", () => {
+  for (const limb of [0, 1]) {
+    const damage: [number, number, number, number] = [0, 0, 0, 0];
+    damage[limb] = 50;
+    const state = player({ weapon: 2, bowDrawTicks: 60, limbDamage: damage });
+    const prediction = new Prediction();
+    prediction.reset(state, 100);
+    assert.equal(prediction.advance(input({ weapon: 2 }), true), false);
+    assert.equal(prediction.player!.arrows, 20);
+    assert.equal(prediction.player!.bowDrawTicks, 0);
+    if (limb === 1) {
+      assert.equal(
+        prediction.advance(
+          input({ seq: 2, weapon: 1, attack: true, block: true }),
+          true,
+        ),
+        false,
+      );
+      assert.equal(prediction.player!.blocking, false);
+    }
+    assert.equal(state.bowDrawTicks, 60);
+    assert.deepEqual(state.limbDamage, damage);
+  }
+  const prediction = new Prediction();
+  prediction.reset(player(), 100);
+  prediction.advance(input({ forward: 1, seq: 1 }), true);
+  prediction.reconcile(player({ limbDamage: [0, 0, 65, 0] }), true, 100);
+  assert.equal(prediction.player!.z, 10);
+  prediction.reconcile(
+    player({ life: 2, limbDamage: [0, 0, 0, 0] }),
+    true,
+    101,
+  );
+  prediction.advance(input({ seq: 2, forward: 1 }), true);
+  assert.ok(prediction.player!.z < 10);
+});
+
+test("remote injuries, pitch and gait use the same historical pose as hit detection", () => {
+  const buffer = new SnapshotBuffer();
+  buffer.push(
+    snapshot(100, [
+      player({
+        pitch: 0,
+        gait: 1,
+        limbDamage: [0, 0, 0, 0],
+        attackTick: 90,
+        attackWeapon: 1,
+        attackYaw: 0.5,
+      }),
+    ]),
+  );
+  buffer.push(
+    snapshot(106, [
+      player({
+        pitch: 0.6,
+        gait: 2,
+        limbDamage: [50, 0, 0, 0],
+        attackTick: 105,
+        attackWeapon: 2,
+      }),
+    ]),
+  );
+  const historical = buffer.sample(103)[0];
+  assert.equal(historical.pitch, 0.3);
+  assert.equal(historical.gait, 1.5);
+  assert.deepEqual(historical.limbDamage, [0, 0, 0, 0]);
+  assert.equal(historical.attackTick, 90);
+  assert.equal(historical.attackWeapon, 1);
+  assert.equal(historical.attackYaw, 0.5);
+  assert.deepEqual(buffer.sample(106)[0].limbDamage, [50, 0, 0, 0]);
 });

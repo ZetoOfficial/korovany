@@ -33,6 +33,9 @@ type Player struct {
 	ShieldTick       uint64            `json:"shieldTick"`
 	Connected        bool              `json:"connected"`
 	Dummy            bool              `json:"dummy,omitempty"`
+	AttackPitch      float64           `json:"attackPitch"`
+	AttackYaw        float64           `json:"attackYaw"`
+	swing            *swordSwing
 	lastBowInputTick uint64
 	dummySpawn       *Spawn
 	queue            []queuedInput
@@ -43,15 +46,18 @@ type Player struct {
 }
 
 type Event struct {
-	ID     uint64  `json:"id"`
-	Type   string  `json:"type"`
-	Actor  string  `json:"actor"`
-	Target string  `json:"target,omitempty"`
-	Damage float64 `json:"damage,omitempty"`
-	Seq    uint64  `json:"seq,omitempty"`
-	Life   uint64  `json:"life,omitempty"`
-	From   *Vec3   `json:"from,omitempty"`
-	To     *Vec3   `json:"to,omitempty"`
+	ID      uint64  `json:"id"`
+	Type    string  `json:"type"`
+	Actor   string  `json:"actor"`
+	Target  string  `json:"target,omitempty"`
+	Damage  float64 `json:"damage,omitempty"`
+	Part    string  `json:"part,omitempty"`
+	Severed bool    `json:"severed,omitempty"`
+	Blocked bool    `json:"blocked,omitempty"`
+	Seq     uint64  `json:"seq,omitempty"`
+	Life    uint64  `json:"life,omitempty"`
+	From    *Vec3   `json:"from,omitempty"`
+	To      *Vec3   `json:"to,omitempty"`
 }
 
 type Snapshot struct {
@@ -131,6 +137,7 @@ func (m *Match) Disconnect(id string) {
 		p.queue = nil
 		p.Blocking = false
 		p.BowDrawTicks = 0
+		p.swing = nil
 		p.disconnectedAt = m.Tick
 	}
 }
@@ -191,6 +198,8 @@ func (m *Match) respawn(p *Player) {
 	}
 	p.Motion = Motion{X: best.X, Z: best.Z, Yaw: best.Yaw, Stamina: 100}
 	p.Health = 100
+	p.swing = nil
+	p.AttackPitch, p.AttackYaw = 0, 0
 	if p.Weapon != Bow {
 		p.Weapon = Sword
 	}
@@ -222,6 +231,9 @@ func (m *Match) attack(p *Player) {
 }
 
 func (m *Match) attackInput(p *Player, q queuedInput) {
+	if p.swing != nil {
+		return
+	}
 	d := &CombatDiagnostic{Tick: m.Tick, Seq: q.Seq, Outcome: "rejected"}
 	p.LastCombat = d
 	r := m.World.Rules
@@ -240,6 +252,8 @@ func (m *Match) attackInput(p *Player, q queuedInput) {
 		d.Reason = "phase"
 	case p.Health <= 0:
 		d.Reason = "dead"
+	case p.limbMissing(1):
+		d.Reason = "arm"
 	case p.Stamina < cost:
 		d.Reason = "stamina"
 	case m.Tick < p.NextAttackTick:
@@ -248,7 +262,7 @@ func (m *Match) attackInput(p *Player, q queuedInput) {
 	if d.Reason != "" {
 		return
 	}
-	targets, viewTick, reason := m.attackView(p, q, d)
+	_, viewTick, reason := m.attackView(p, q, d)
 	if reason != "" {
 		d.Reason = reason
 		return
@@ -259,69 +273,76 @@ func (m *Match) attackInput(p *Player, q queuedInput) {
 	p.NextAttackTick = m.Tick + cooldown
 	p.Stamina -= cost
 	p.ShieldTick = 0
-	d.Outcome, d.Reason = "miss", "range"
-	var target *Player
-	nearest := r.AttackRange
-	for _, other := range targets {
-		if p.ID == other.ID || other.Health <= 0 {
-			continue
-		}
-		dx, dz := other.X-p.X, other.Z-p.Z
-		distance := math.Hypot(dx, dz)
-		if distance > nearest || distance < 0.001 {
-			continue
-		}
-		if math.Abs(other.Y-p.Y) > 1.8 {
-			d.Reason = "height"
-			continue
-		}
-		if (-math.Sin(p.Yaw)*dx-math.Cos(p.Yaw)*dz)/distance < math.Cos(50*math.Pi/180) {
-			d.Reason = "direction"
-			continue
-		}
-		if !m.World.Clear(p.X, p.Z, other.X, other.Z) {
-			d.Reason = "wall"
-			continue
-		}
-		if viewTick < float64(other.ShieldTick) {
-			d.Reason = "shield"
-			continue
-		}
-		target, nearest = other, distance
-	}
-	if target == nil {
-		return
-	}
-	m.damage(p, target, r.AttackDamage, d)
+	p.AttackPitch, p.AttackYaw = p.Pitch, p.Yaw
+	p.Blocking = false
+	d.Outcome, d.Reason = "swing", "windup"
+	p.swing = &swordSwing{rewind: float64(m.Tick) - viewTick, diagnostic: d, life: p.Life, seq: q.Seq}
 }
 
-func (m *Match) damage(p, historical *Player, damage float64, diagnostic *CombatDiagnostic) {
-	m.damageFrom(p, historical, damage, diagnostic, Vec3{p.X, p.Y, p.Z}, p.LastAttackSeq, p.Life)
-}
-
-func (m *Match) damageFrom(p, historical *Player, damage float64, diagnostic *CombatDiagnostic, source Vec3, seq, life uint64) {
+func (m *Match) damageFrom(p, historical *Player, damage float64, diagnostic *CombatDiagnostic, source Vec3, seq, life uint64, hit BodyHit) {
 	target := m.Players[historical.ID]
 	if target == nil || target.Health <= 0 || target.Life != historical.Life {
 		diagnostic.Reason = "life_changed"
 		return
 	}
+	for _, part := range combat.Parts {
+		if part.ID == hit.Part && part.Limb >= 0 && target.limbMissing(part.Limb) {
+			diagnostic.Outcome, diagnostic.Reason = "miss", "limb_missing"
+			return
+		}
+	}
 	r := m.World.Rules
 	diagnostic.Outcome, diagnostic.Reason = "hit", "hit"
 	dx, dz := source.X-historical.X, source.Z-historical.Z
 	distance := math.Hypot(dx, dz)
-	if historical.Blocking && distance > 0 && (-math.Sin(historical.Yaw)*dx-math.Cos(historical.Yaw)*dz)/distance > 0.3 {
+	blocked := historical.Blocking && !target.limbMissing(1) && distance > 0 && (-math.Sin(historical.Yaw)*dx-math.Cos(historical.Yaw)*dz)/distance > 0.3
+	if blocked {
 		diagnostic.Reason = "block"
 		damage = math.Round(damage * 0.25)
 		target.Stamina = math.Max(0, target.Stamina-8)
 	}
+	severed := false
+	for _, part := range combat.Parts {
+		if part.ID != hit.Part {
+			continue
+		}
+		if part.Limb >= 0 && !target.limbMissing(part.Limb) {
+			limit := combat.ArmHealth
+			if part.Limb >= 2 {
+				limit = combat.LegHealth
+			}
+			target.LimbDamage[part.Limb] = math.Min(limit, target.LimbDamage[part.Limb]+damage)
+			severed = target.limbMissing(part.Limb)
+		}
+		damage = math.Round(damage * part.Multiplier)
+		break
+	}
+	if !target.canBow() {
+		target.BowDrawTicks = 0
+	}
+	if target.limbMissing(1) {
+		target.Blocking = false
+		target.swing = nil
+	}
+	if distance > 0 && !target.Dummy {
+		impulse := math.Min(3, damage*.06)
+		target.ImpulseX = clamp(target.ImpulseX-dx/distance*impulse, -4, 4)
+		target.ImpulseZ = clamp(target.ImpulseZ-dz/distance*impulse, -4, 4)
+	}
+	diagnostic.Part = hit.Part
 	target.Health = math.Max(0, target.Health-damage)
 	m.emit("hit", p.ID, target.ID, damage)
 	m.events[len(m.events)-1].Seq = seq
 	m.events[len(m.events)-1].Life = life
+	m.events[len(m.events)-1].Part = hit.Part
+	m.events[len(m.events)-1].To = &hit.Point
+	m.events[len(m.events)-1].Severed = severed
+	m.events[len(m.events)-1].Blocked = blocked
 	if target.Health == 0 {
 		p.Kills++
 		target.Deaths++
 		target.Blocking = false
+		target.swing = nil
 		target.BowDrawTicks = 0
 		target.RespawnTick = m.Tick + uint64(r.RespawnSeconds*float64(r.TickRate))
 		m.emit("kill", p.ID, target.ID, 0)
@@ -354,6 +375,7 @@ func (m *Match) Step() {
 	if m.Phase != "playing" {
 		m.projectiles = nil
 		for _, p := range m.Players {
+			p.swing = nil
 			p.BowDrawTicks = 0
 		}
 	}
@@ -386,6 +408,9 @@ func (m *Match) Step() {
 			p.Weapon = input.Weapon
 		}
 		input.Weapon = p.Weapon
+		if swordActive(p, float64(m.Tick), r) {
+			input.Block = false
+		}
 		Move(m.World, &p.Motion, input)
 		if p.Weapon == Bow {
 			m.updateBow(p, queued)
@@ -400,6 +425,7 @@ func (m *Match) Step() {
 		m.attackInput(attack.player, attack.input)
 	}
 	if m.Phase == "playing" {
+		m.stepSwords()
 		m.stepProjectiles()
 		finished := m.Tick >= m.EndTick
 		for _, p := range m.Players {
@@ -424,6 +450,7 @@ func (m *Match) Snapshot() Snapshot {
 	for _, p := range m.ordered() {
 		copy := *p
 		copy.queue = nil
+		copy.swing = nil
 		if p.LastCombat != nil {
 			diagnostic := *p.LastCombat
 			copy.LastCombat = &diagnostic

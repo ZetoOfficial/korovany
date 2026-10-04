@@ -1,3 +1,4 @@
+import { combat, canBow, canWalk, limbMissing, swordActive } from "./combat.ts";
 import {
   rules,
   stepSeconds,
@@ -28,28 +29,45 @@ export function move(p: Motion, input: Input): void {
   const dt = stepSeconds;
   p.yaw = input.yaw;
   p.pitch = input.pitch;
-  p.blocking = input.block && input.weapon !== 2 && p.stamina > 5;
+  p.blocking =
+    input.block && input.weapon !== 2 && p.stamina > 5 && !limbMissing(p, 1);
   let { forward, strafe } = input;
+  if (!canWalk(p)) forward = strafe = 0;
   const length = Math.hypot(forward, strafe);
   if (length > 1) {
     forward /= length;
     strafe /= length;
   }
   const running = input.sprint && !p.blocking && p.stamina > 5 && length > 0;
-  const speed = running ? rules.runSpeed : rules.walkSpeed;
+  const injury =
+    Math.max(p.limbDamage?.[2] ?? 0, p.limbDamage?.[3] ?? 0) / combat.legHealth;
+  const speed =
+    (running ? rules.runSpeed : rules.walkSpeed) *
+    (1 - 0.45 * clamp(injury, 0, 1));
+  p.gait = length > 0 ? (p.gait ?? 0) + speed * dt * 1.9 : 0;
   const nx = clamp(
-    p.x + (-Math.sin(p.yaw) * forward + Math.cos(p.yaw) * strafe) * speed * dt,
+    p.x +
+      ((-Math.sin(p.yaw) * forward + Math.cos(p.yaw) * strafe) * speed +
+        (p.impulseX ?? 0)) *
+        dt,
     -world.bounds.x + rules.radius,
     world.bounds.x - rules.radius,
   );
   const nz = clamp(
-    p.z + (-Math.cos(p.yaw) * forward - Math.sin(p.yaw) * strafe) * speed * dt,
+    p.z +
+      ((-Math.cos(p.yaw) * forward - Math.sin(p.yaw) * strafe) * speed +
+        (p.impulseZ ?? 0)) *
+        dt,
     -world.bounds.z + rules.radius,
     world.bounds.z - rules.radius,
   );
   if (!blocked(nx, p.z)) p.x = nx;
   if (!blocked(p.x, nz)) p.z = nz;
-  if (input.jump && p.y === 0 && p.stamina >= rules.jumpCost) {
+  p.impulseX = (p.impulseX ?? 0) * Math.exp(-10 * dt);
+  p.impulseZ = (p.impulseZ ?? 0) * Math.exp(-10 * dt);
+  if (Math.abs(p.impulseX) < 0.001) p.impulseX = 0;
+  if (Math.abs(p.impulseZ) < 0.001) p.impulseZ = 0;
+  if (input.jump && canWalk(p) && p.y === 0 && p.stamina >= rules.jumpCost) {
     p.vy = rules.jumpSpeed;
     p.stamina -= rules.jumpCost;
   }
@@ -89,10 +107,13 @@ export class Prediction {
       return false;
     }
     p.weapon = input.weapon;
-    move(p, input);
+    move(p, swordActive(p, this.tick) ? { ...input, block: false } : input);
     const cost = p.weapon === 2 ? rules.bowCost : rules.attackCost;
     const available =
-      combat && this.tick >= p.nextAttackTick && p.stamina >= cost;
+      combat &&
+      (p.weapon === 2 ? canBow(p) : !limbMissing(p, 1)) &&
+      this.tick >= p.nextAttackTick &&
+      p.stamina >= cost;
     let fire = input.attack;
     if (p.weapon === 2) {
       const draw = p.bowDrawTicks;
@@ -113,6 +134,9 @@ export class Prediction {
     p.attackTick = this.tick;
     p.lastAttackSeq = input.seq;
     p.attackWeapon = p.weapon;
+    p.attackPitch = p.pitch;
+    p.attackYaw = p.yaw;
+    p.blocking = false;
     p.nextAttackTick =
       this.tick + (p.weapon === 2 ? rules.bowTicks : rules.attackTicks);
     p.shieldTick = 0;
@@ -215,6 +239,12 @@ export class SnapshotBuffer {
         shieldTick: a.shieldTick,
         weapon: a.weapon,
         attackTick: a.attackTick,
+        attackWeapon: a.attackWeapon,
+        attackPitch: a.attackPitch,
+        attackYaw: a.attackYaw,
+        limbDamage: a.limbDamage,
+        gait: (a.gait ?? 0) + ((b.gait ?? 0) - (a.gait ?? 0)) * t,
+        pitch: a.pitch + (b.pitch - a.pitch) * t,
         bowDrawTicks:
           a.bowDrawTicks > 0 && b.bowDrawTicks > 0
             ? a.bowDrawTicks + (b.bowDrawTicks - a.bowDrawTicks) * t

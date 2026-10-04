@@ -1,8 +1,24 @@
 import * as THREE from "three";
-import { createHumanoid } from "./characters.ts";
+import { createCombatHumanoid as createHumanoid } from "./combat-character.ts";
 import { box, shape, coneGeometry, cylinderGeometry } from "./primitives.ts";
-import { rules, world, type Player, type Projectile } from "../protocol.ts";
+import {
+  rules,
+  world,
+  type Player,
+  type Projectile,
+  type GameEvent,
+} from "../protocol.ts";
 import { createArrow, createBow, setBowDraw } from "./bow.ts";
+import {
+  combat,
+  canBow,
+  limbMissing,
+  partRotation,
+  swordRotation,
+  bodyYaw,
+} from "../combat.ts";
+import { createSword } from "./sword.ts";
+import { Impacts } from "./impacts.ts";
 import { BowTrajectory } from "./trajectory.ts";
 
 type Avatar = ReturnType<typeof createHumanoid> & {
@@ -22,6 +38,8 @@ export class ArenaView {
   private shotStart = -10;
   private arrows = new Map<number, THREE.Group>();
   private swingStart = -10;
+  private impacts = new Impacts();
+  private recoilStart = -10;
   private lookReady = false;
   private smoothPosition = new THREE.Vector3();
   private localLife = 0;
@@ -193,12 +211,14 @@ export class ArenaView {
     }
     this.scene.add(trunks, crowns);
     this.camera.rotation.order = "YXZ";
-    this.scene.add(this.camera);
+    this.scene.add(this.camera, this.impacts.group);
     this.scene.add(this.trajectory.group);
     this.camera.add(this.weapon);
-    box(this.weapon, 0.38, -0.36, -0.56, 0.17, 0.35, 0.19, "#ad8b62", false);
-    box(this.weapon, 0.38, -0.12, -0.75, 0.055, 0.95, 0.07, "#d6dccb", false);
-    box(this.weapon, 0.38, -0.45, -0.75, 0.4, 0.07, 0.1, "#b79c62", false);
+    this.weapon.position.set(0.34, 0, -0.45);
+    this.weapon.scale.setScalar(0.75);
+    box(this.weapon, 0, -0.56, 0, 0.14, 0.28, 0.16, "#557c57", false);
+    box(this.weapon, 0, -0.7, 0, 0.16, 0.16, 0.17, "#ad8b62", false);
+    this.weapon.add(createSword());
     this.weapon.visible = false;
     this.bow.position.set(0.26, -0.17, -0.9);
     this.bow.scale.setScalar(0.75);
@@ -219,7 +239,13 @@ export class ArenaView {
     else this.swingStart = now;
   }
   resetAttack() {
-    this.swingStart = this.shotStart = -10;
+    this.swingStart = this.shotStart = this.recoilStart = -10;
+    this.impacts.clear();
+  }
+  impact(event: GameEvent, self: string, now: number) {
+    const avatar = event.target ? this.avatars.get(event.target) : undefined;
+    this.impacts.hit(event, event.part ? avatar?.parts[event.part] : undefined);
+    if (event.target === self) this.recoilStart = now;
   }
   setQuality(low: boolean) {
     this.renderer.setPixelRatio(low ? 0.85 : Math.min(devicePixelRatio, 1.5));
@@ -265,8 +291,8 @@ export class ArenaView {
     this.scene.add(model.group);
     const bow = createBow();
     bow.position.set(0, -0.65, -0.2);
-    bow.rotation.x = 1.15;
-    model.parts.otherArm.add(bow);
+    bow.rotation.x = -1.15;
+    model.parts.leftArm.add(bow);
     const avatar = { ...model, label, shield, bow };
     this.avatars.set(player.id, avatar);
     return avatar;
@@ -328,11 +354,6 @@ export class ArenaView {
     for (const player of remotes) {
       if (player.id === id) continue;
       const avatar = this.avatars.get(player.id) ?? this.avatar(player);
-      const moving =
-        Math.hypot(
-          player.x - avatar.group.position.x,
-          player.z - avatar.group.position.z,
-        ) > 0.001;
       avatar.group.position.set(
         player.x,
         player.y + (player.health <= 0 ? 0.3 : 0),
@@ -340,28 +361,25 @@ export class ArenaView {
       );
       avatar.group.rotation.set(
         0,
-        player.yaw,
+        bodyYaw(player, tick),
         player.health <= 0 ? Math.PI / 2 : 0,
       );
-      const walk = moving && player.health > 0 ? Math.sin(now * 10) * 0.5 : 0;
-      avatar.parts.leg.rotation.x = walk;
-      avatar.parts.otherLeg.rotation.x = -walk;
-      avatar.parts.arm.rotation.x = -walk * 0.5;
-      avatar.parts.otherArm.rotation.x =
-        tick - player.attackTick < 16 && player.attackTick > 0
-          ? -1.4
-          : player.blocking
-            ? -1
-            : walk * 0.5;
-      avatar.sword.visible = player.weapon === 1 && !player.dummy;
-      avatar.bow.visible = player.weapon === 2;
-      if (player.weapon === 2) {
-        avatar.parts.arm.rotation.x = -1.15;
-        avatar.parts.otherArm.rotation.x = -1.15;
-        const charge = player.bowDrawTicks / rules.bowDrawTicks;
-        avatar.parts.arm.rotation.x -= charge * 0.35;
-        setBowDraw(avatar.bow, charge, player.arrows > 0);
+      for (const part of combat.parts) {
+        avatar.parts[part.id].visible =
+          part.limb < 0 || !limbMissing(player, part.limb);
+        avatar.parts[part.id].rotation.set(
+          ...partRotation(player, part.id, tick),
+        );
       }
+      avatar.sword.visible =
+        player.weapon === 1 && !player.dummy && !limbMissing(player, 1);
+      avatar.bow.visible = player.weapon === 2 && canBow(player);
+      if (avatar.bow.visible)
+        setBowDraw(
+          avatar.bow,
+          player.bowDrawTicks / rules.bowDrawTicks,
+          player.arrows > 0,
+        );
       avatar.label.visible = player.health > 0;
       avatar.shield.visible = tick < player.shieldTick && player.health > 0;
     }
@@ -380,9 +398,16 @@ export class ArenaView {
       this.lookReady = true;
       this.localLife = local.life;
       this.camera.position.copy(this.smoothPosition);
-      this.camera.rotation.set(pitch, yaw, 0);
-      this.weapon.visible = local.health > 0 && local.weapon === 1;
-      this.bow.visible = local.health > 0 && local.weapon === 2;
+      const recoil = Math.max(0, 1 - (now - this.recoilStart) * 5);
+      this.camera.rotation.set(
+        pitch + Math.sin(recoil * Math.PI) * 0.035,
+        yaw,
+        recoil * 0.025,
+      );
+      this.weapon.visible =
+        local.health > 0 && local.weapon === 1 && !limbMissing(local, 1);
+      this.bow.visible =
+        local.health > 0 && local.weapon === 2 && canBow(local);
       this.bow.position.z =
         -0.9 + Math.max(0, 1 - (now - this.shotStart) * 5) * 0.13;
       const charge = local.bowDrawTicks / rules.bowDrawTicks;
@@ -393,12 +418,16 @@ export class ArenaView {
         charge,
         local.arrows > 0 && now - this.shotStart > 0.18,
       );
-      const swing = Math.max(0, 1 - (now - this.swingStart) * 3.2);
-      this.weapon.rotation.set(
-        -Math.sin(swing * Math.PI) * 0.8,
-        0,
-        local.blocking ? 0.9 : -Math.sin(swing * Math.PI) * 0.8,
-      );
+      const age = (now - this.swingStart) * rules.tickRate;
+      const rotation = swordRotation(age);
+      if (local.blocking && age >= rules.attackTicks)
+        this.weapon.rotation.set(1.2, 0, -0.8);
+      else this.weapon.rotation.set(...rotation);
+      // The camera can turn during a committed strike; the blade retains its aim.
+      if (age < rules.attackTicks) {
+        this.weapon.rotation.x += (local.attackPitch ?? pitch) - pitch;
+        this.weapon.rotation.y += (local.attackYaw ?? yaw) - yaw;
+      }
     } else {
       this.lookReady = false;
       this.weapon.visible = false;
@@ -406,6 +435,7 @@ export class ArenaView {
       this.camera.position.set(Math.sin(now * 0.035) * 14, 15, 25);
       this.camera.lookAt(0, 0, 0);
     }
+    this.impacts.update(dt);
     this.trajectory.update(local, yaw, pitch, this.camera, aiming);
     this.renderer.render(this.scene, this.camera);
   }

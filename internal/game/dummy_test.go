@@ -1,6 +1,9 @@
 package game
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestDummyStartsSoloMatchAndRemainsIdle(t *testing.T) {
 	m := NewMatch()
@@ -43,12 +46,15 @@ func TestDummyCombatAndFixedRespawn(t *testing.T) {
 			for n := 0; n <= m.World.Rules.CountdownSeconds*m.World.Rules.TickRate; n++ {
 				m.Step()
 			}
+			dummy.Yaw = math.Pi
+			dummy.dummySpawn.Yaw = math.Pi
 			spawn := dummy.Motion
 			life := dummy.Life
 			human.Motion = Motion{X: dummy.X, Z: dummy.Z + 2, Stamina: 100}
 			damage, cooldown := m.World.Rules.AttackDamage, m.World.Rules.AttackTicks
 			if weapon == Bow {
 				damage, cooldown = m.World.Rules.BowDamage, m.World.Rules.BowTicks
+				human.Pitch = -.22
 			}
 			for seq := uint64(1); seq <= 3; seq++ {
 				if weapon == Bow {
@@ -59,6 +65,7 @@ func TestDummyCombatAndFixedRespawn(t *testing.T) {
 						t.Fatal("attack input rejected")
 					}
 					m.Step()
+					resolveSword(t, m, human)
 				}
 				if seq == 1 && dummy.Health != 100-damage {
 					t.Fatalf("dummy did not receive ordinary weapon damage: %+v", dummy)
@@ -88,6 +95,7 @@ func TestDummyCombatAndFixedRespawn(t *testing.T) {
 			} else {
 				m.Input(human.ID, Input{Seq: human.lastSeq + 1, Weapon: weapon, Attack: true})
 				m.Step()
+				resolveSword(t, m, human)
 			}
 			if dummy.Health != 100 || human.LastCombat.Reason != "shield" {
 				t.Fatal("dummy spawn protection was bypassed")

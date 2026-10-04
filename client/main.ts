@@ -1,3 +1,4 @@
+import { canBow, canWalk, limbMissing, combat, partNames } from "./combat.ts";
 import "./style.css";
 import { ArenaView } from "./render/arena.ts";
 import { Controls } from "./input.ts";
@@ -100,6 +101,9 @@ function leave(message = "Создай комнату или введи код �
   prediction.pending = [];
   snapshots.clear();
   feed.length = 0;
+  view.resetAttack();
+  hitUntil = damageUntil = 0;
+  el("hit-detail").dataset.until = "0";
   menuOpen = false;
   room = "";
   el<HTMLInputElement>("room-code").value = "";
@@ -153,6 +157,13 @@ function receive(next: Snapshot) {
     if (event.id <= lastEvent) continue;
     lastEvent = event.id;
     if (event.type === "hit") {
+      view.impact(event, self, performance.now() / 1000);
+      if (event.actor === self && event.part) {
+        el("hit-detail").textContent =
+          `${partNames[event.part]} · −${event.damage}${event.blocked ? " · блок" : event.severed ? " · потеря конечности" : ""}`;
+        el("hit-detail").classList.toggle("critical", event.part === "head");
+        el("hit-detail").dataset.until = String(performance.now() + 1300);
+      }
       if (event.actor === self) hitUntil = performance.now() + 170;
       if (event.target === self) damageUntil = performance.now() + 300;
     }
@@ -327,6 +338,23 @@ function updateHUD(now: number) {
     : "ЛКМ / E · удар · ПКМ / Q · блок";
   el("ammo").textContent =
     `Стрелы: ${player.arrows} / ${rules.arrows}${bow && player.arrows === 0 ? " · возьми клинок: 1" : ""}`;
+  const injuries = combat.parts.filter(
+    (part) => part.limb >= 0 && (player.limbDamage?.[part.limb] ?? 0) > 0,
+  );
+  el("injury-status").textContent = injuries
+    .map(
+      (part) =>
+        `${partNames[part.id as keyof typeof partNames]}: ${limbMissing(player, part.limb) ? "потеряна" : "ранена"}`,
+    )
+    .join(" · ");
+  const restrictions = [
+    !canBow(player) ? "Для лука нужны обе руки" : "",
+    limbMissing(player, 1) ? "Клинок и блок недоступны" : "",
+    !canWalk(player) ? "Движение и прыжки недоступны" : "",
+  ].filter(Boolean);
+  el("injury-effects").textContent = restrictions.join(" · ");
+  if ((bow && !canBow(player)) || (!bow && limbMissing(player, 1)))
+    el("weapon-hint").textContent = "Оружие недоступно из-за травмы";
   el("weapon-sword").setAttribute("aria-pressed", String(!bow));
   el("weapon-bow").setAttribute("aria-pressed", String(bow));
   el("player-count").textContent =
@@ -445,6 +473,7 @@ function frame(now: number) {
     menuOpen ||
     prediction.player?.weapon !== 2 ||
     prediction.player.health <= 0 ||
+    !canBow(prediction.player) ||
     snapshot?.phase !== "playing";
   el("bow-charge-fill").style.transform =
     `scaleX(${draw / rules.bowDrawTicks})`;
@@ -455,6 +484,7 @@ function frame(now: number) {
       : draw > 0
         ? `Натяжение ${Math.round((draw / rules.bowDrawTicks) * 100)}%`
         : "Зажми ЛКМ / E";
+  el("hit-detail").hidden = now > Number(el("hit-detail").dataset.until ?? 0);
   el("hit-marker").hidden = now > hitUntil;
   el("damage").style.opacity = now < damageUntil ? "0.6" : "0";
   uiTimer += elapsed;

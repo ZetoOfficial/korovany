@@ -15,7 +15,7 @@ type Rules struct {
 	RespawnSeconds, ShieldSeconds, Radius, WalkSpeed, RunSpeed, Gravity, JumpSpeed float64
 	JumpCost, RunDrain, StaminaRegen, BlockRegen, AttackCost                       float64
 	AttackTicks                                                                    uint64
-	AttackRange, AttackDamage                                                      float64
+	AttackDamage                                                                   float64
 	BowCost, BowRange, BowDamage                                                   float64
 	BowTicks, BowDrawTicks, BowMinDrawTicks                                        uint64
 	BowMinSpeed, BowSpeed, BowGravity, BowMinDamage                                float64
@@ -107,14 +107,18 @@ func (i Input) Valid() bool {
 }
 
 type Motion struct {
-	X        float64 `json:"x"`
-	Y        float64 `json:"y"`
-	Z        float64 `json:"z"`
-	VY       float64 `json:"vy"`
-	Yaw      float64 `json:"yaw"`
-	Pitch    float64 `json:"pitch"`
-	Stamina  float64 `json:"stamina"`
-	Blocking bool    `json:"blocking"`
+	X          float64    `json:"x"`
+	Y          float64    `json:"y"`
+	Z          float64    `json:"z"`
+	VY         float64    `json:"vy"`
+	Yaw        float64    `json:"yaw"`
+	Pitch      float64    `json:"pitch"`
+	Stamina    float64    `json:"stamina"`
+	Blocking   bool       `json:"blocking"`
+	LimbDamage [4]float64 `json:"limbDamage"`
+	Gait       float64    `json:"gait"`
+	ImpulseX   float64    `json:"impulseX"`
+	ImpulseZ   float64    `json:"impulseZ"`
 }
 
 // Move is mirrored by client/simulation.ts and checked with shared movement fixtures.
@@ -122,8 +126,11 @@ type Motion struct {
 func Move(w World, p *Motion, i Input) {
 	r, dt := w.Rules, 1/float64(w.Rules.TickRate)
 	p.Yaw, p.Pitch = i.Yaw, i.Pitch
-	p.Blocking = i.Block && i.Weapon != Bow && p.Stamina > 5
+	p.Blocking = i.Block && i.Weapon != Bow && p.Stamina > 5 && !p.limbMissing(1)
 	f, s := i.Forward, i.Strafe
+	if !p.canWalk() {
+		f, s = 0, 0
+	}
 	length := math.Hypot(f, s)
 	if length > 1 {
 		f /= length
@@ -134,15 +141,30 @@ func Move(w World, p *Motion, i Input) {
 	if running {
 		speed = r.RunSpeed
 	}
-	nx := clamp(p.X+(-math.Sin(p.Yaw)*f+math.Cos(p.Yaw)*s)*speed*dt, -w.Bounds.X+r.Radius, w.Bounds.X-r.Radius)
-	nz := clamp(p.Z+(-math.Cos(p.Yaw)*f-math.Sin(p.Yaw)*s)*speed*dt, -w.Bounds.Z+r.Radius, w.Bounds.Z-r.Radius)
+	injury := math.Max(p.LimbDamage[2], p.LimbDamage[3]) / combat.LegHealth
+	speed *= 1 - .45*clamp(injury, 0, 1)
+	if length > 0 {
+		p.Gait += speed * dt * 1.9
+	} else {
+		p.Gait = 0
+	}
+	nx := clamp(p.X+((-math.Sin(p.Yaw)*f+math.Cos(p.Yaw)*s)*speed+p.ImpulseX)*dt, -w.Bounds.X+r.Radius, w.Bounds.X-r.Radius)
+	nz := clamp(p.Z+((-math.Cos(p.Yaw)*f-math.Sin(p.Yaw)*s)*speed+p.ImpulseZ)*dt, -w.Bounds.Z+r.Radius, w.Bounds.Z-r.Radius)
 	if !w.Blocked(nx, p.Z) {
 		p.X = nx
 	}
 	if !w.Blocked(p.X, nz) {
 		p.Z = nz
 	}
-	if i.Jump && p.Y == 0 && p.Stamina >= r.JumpCost {
+	p.ImpulseX *= math.Exp(-10 * dt)
+	p.ImpulseZ *= math.Exp(-10 * dt)
+	if math.Abs(p.ImpulseX) < .001 {
+		p.ImpulseX = 0
+	}
+	if math.Abs(p.ImpulseZ) < .001 {
+		p.ImpulseZ = 0
+	}
+	if i.Jump && p.canWalk() && p.Y == 0 && p.Stamina >= r.JumpCost {
 		p.VY = r.JumpSpeed
 		p.Stamina -= r.JumpCost
 	}

@@ -678,3 +678,26 @@ input:focus-visible {
 #bow-charge small {
   font-size: 11px;
 }
+
+#hit-detail {
+  position: fixed;
+  top: calc(50% + 32px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: #f4e6be;
+  font-size: 13px;
+  text-shadow: 0 2px 5px #182823;
+  text-align: center;
+  pointer-events: none;
+}
+#hit-detail.critical {
+  color: #ffbb7c;
+  font-weight: 700;
+}
+#injury-status,
+#injury-effects {
+  max-width: min(460px, 42vw);
+  color: #ffbc9b;
+  font-size: 11px;
+  line-height: 1.45;
+}
