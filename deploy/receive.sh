@@ -2,6 +2,11 @@
 # Installed root-owned; invoked by a restricted SSH key as korovany-deploy.
 set -euo pipefail
 umask 022
+# The legacy host keeps its /korovany/ health route when no override is installed.
+health_url=http://127.0.0.1:8090/korovany/api/health
+if [[ -f /etc/korovany/deploy.conf ]]; then
+  source /etc/korovany/deploy.conf
+fi
 read -r action revision extra <<< "${SSH_ORIGINAL_COMMAND:-}"
 if [[ ! "$action" =~ ^(deploy|rollback)$ || ! "$revision" =~ ^[a-f0-9]{40}$ || -n "${extra:-}" ]]; then
   echo 'Expected: deploy <commit SHA> or rollback <commit SHA>' >&2
@@ -35,7 +40,7 @@ activate() {
 }
 healthy() {
   for attempt in $(seq 1 30); do
-    if curl --max-time 2 -fsS http://127.0.0.1:8090/korovany/api/health 2>/dev/null |
+    if curl --max-time 2 -fsS "$health_url" 2>/dev/null |
       python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(v.get("status") != "ok" or v.get("revision") != sys.argv[1])' "$revision" 2>/dev/null; then
       return 0
     fi
