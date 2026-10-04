@@ -60,6 +60,10 @@
         <span>01 / СХВАТКА НА ТРАКТЕ</span>
         <p>Один двор. Десять побед.<br />И никакой пощады.</p>
         <small>3 минуты · до 10 убийств · возрождение через 3 секунды</small>
+        <small
+          >Для тренировки одному: создай комнату и добавь манекена в
+          меню.</small
+        >
       </aside>
       <footer class="lobby-footer">
         <span>WASD · МЫШЬ · 1 КЛИНОК · 2 ЛУК · ЛКМ АТАКА</span
@@ -130,6 +134,26 @@
         <label class="quality"
           ><input id="low-quality" type="checkbox" /> Лёгкая графика</label
         >
+        <section class="dummy-controls" aria-labelledby="dummy-title">
+          <h3 id="dummy-title">Манекены <span id="dummy-count">0</span></h3>
+          <p>
+            Неподвижные цели без ИИ. Получают урон и возрождаются через 3
+            секунды. С манекеном можно начать бой одному.
+          </p>
+          <div class="dummy-buttons">
+            <button id="add-dummy" class="secondary" disabled>
+              Добавить манекена
+            </button>
+            <button id="remove-dummies" class="secondary" disabled>
+              Убрать всех
+            </button>
+          </div>
+          <p>
+            До 8 бойцов вместе с игроками. Манекенами управляет любой игрок
+            комнаты.
+          </p>
+          <p id="dummy-status" class="status" role="status"></p>
+        </section>
         <button id="leave" class="secondary">Покинуть комнату</button>
       </section>
     </div>

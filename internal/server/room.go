@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -136,6 +137,22 @@ func (r *room) run(remove func()) {
 				if peers[op.peer.id] == op.peer {
 					m.InputDelayed(op.peer.id, op.input, time.Since(op.receivedAt).Seconds())
 				}
+			case "add_dummy", "remove_dummies":
+				if peers[op.peer.id] != op.peer {
+					continue
+				}
+				var message string
+				if op.kind == "add_dummy" {
+					p, err := m.AddDummy()
+					if err != nil {
+						message = err.Error()
+					} else {
+						message = p.Name + " добавлен на арену."
+					}
+				} else {
+					message = fmt.Sprintf("Манекенов убрано: %d.", m.RemoveDummies())
+				}
+				op.peer.send(map[string]string{"type": "dummy_result", "message": message})
 			case "latency":
 				if peers[op.peer.id] == op.peer {
 					m.SetLatency(op.peer.id, op.rtt, op.jitter)

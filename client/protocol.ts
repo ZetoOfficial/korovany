@@ -2,9 +2,11 @@ import arena from "../internal/game/data/arena.json";
 
 export const world = arena;
 export const rules = arena.rules;
-export const protocolVersion = 3;
+export const protocolVersion = 4;
 export const stepSeconds = 1 / rules.tickRate;
 export const interpolationTicks = rules.tickRate * 0.1;
+
+export type DummyAction = "add_dummy" | "remove_dummies";
 
 export interface ViewTime {
   tick: number;
@@ -65,6 +67,7 @@ export interface Player extends Motion {
   respawnTick: number;
   shieldTick: number;
   connected: boolean;
+  dummy?: boolean;
 }
 
 export interface GameEvent {
@@ -98,5 +101,6 @@ export interface Welcome {
 export type ServerMessage =
   | Welcome
   | Snapshot
+  | { type: "dummy_result"; message: string }
   | { type: "pong"; time: number }
   | { type: "probe"; probe: string };

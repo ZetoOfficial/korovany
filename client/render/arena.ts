@@ -344,7 +344,7 @@ export class ArenaView {
           : player.blocking
             ? -1
             : walk * 0.5;
-      avatar.sword.visible = player.weapon === 1;
+      avatar.sword.visible = player.weapon === 1 && !player.dummy;
       avatar.bow.visible = player.weapon === 2;
       if (player.weapon === 2) {
         avatar.parts.arm.rotation.x = -1.15;

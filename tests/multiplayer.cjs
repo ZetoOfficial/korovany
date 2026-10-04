@@ -247,6 +247,107 @@ async function until(condition, label, timeout = 10000) {
     );
     assert.equal(await a.page.locator("#room-code").inputValue(), "");
     console.log("PASS leaving a room returns to a clean lobby");
+
+    await a.page.locator("#create").click();
+    await a.page.locator("#hud").waitFor({ state: "visible" });
+    const trainingRoom = await a.page.locator("#room-label").textContent();
+    await a.page.locator("#menu-button").click();
+    assert.equal(await a.page.locator("#remove-dummies").isEnabled(), false);
+    await a.page.locator("#add-dummy").click();
+    await until(
+      () =>
+        a.wire.state?.phase === "playing" &&
+        a.wire.state.players.some((p) => p.dummy),
+      "a dummy starts a solo match",
+    );
+    await a.page.locator("#dummy-count").filter({ hasText: /^1$/ }).waitFor();
+    const dummy = a.wire.state.players.find((p) => p.dummy);
+    const dummyState = () =>
+      a.wire.state.players.find((p) => p.id === dummy.id);
+    await a.page.locator("#resume").click();
+    await a.page.bringToFront();
+    await a.page.keyboard.press("2");
+    await until(
+      () => a.wire.state.players.find((p) => p.id === a.wire.id).weapon === 2,
+      "bow equipped for dummy practice",
+    );
+    const trainee = a.wire.state.players.find((p) => p.id === a.wire.id);
+    const dummyYaw = Math.atan2(trainee.x - dummy.x, trainee.z - dummy.z);
+    const turnToDummy = Math.atan2(
+      Math.sin(trainee.yaw - dummyYaw),
+      Math.cos(trainee.yaw - dummyYaw),
+    );
+    await a.page.mouse.move(480, 360);
+    await a.page.mouse.down({ button: "right" });
+    await a.page.mouse.move(480 + Math.round(turnToDummy / 0.0022), 360);
+    await a.page.mouse.up({ button: "right" });
+    await until(
+      () =>
+        Math.abs(
+          a.wire.state.players.find((p) => p.id === a.wire.id).yaw - dummyYaw,
+        ) < 0.004,
+      "aim reaches the dummy",
+    );
+    await a.page.mouse.click(480, 360);
+    await until(() => dummyState().health === 66, "dummy receives bow damage");
+    await a.page.locator("#players").filter({ hasText: "66 HP" }).waitFor();
+    assert.equal(dummyState().x, dummy.x);
+    assert.equal(dummyState().z, dummy.z);
+    await a.page.keyboard.down("f");
+    await until(
+      () =>
+        dummyState().health === 0 &&
+        a.wire.state.players.find((p) => p.id === a.wire.id).kills === 1,
+      "dummy death counts as a kill",
+    );
+    await a.page.keyboard.up("f");
+    await until(() => dummyState().health === 100, "dummy respawns");
+    assert.equal(dummyState().x, dummy.x);
+    assert.equal(dummyState().z, dummy.z);
+    assert.equal(dummyState().life, dummy.life + 1);
+    assert.equal(dummyState().attackTick, 0);
+    console.log(
+      "PASS solo dummy practice, visible health, bow damage, death and fixed respawn",
+    );
+
+    await b.page.locator("#menu-button").click();
+    await b.page.locator("#leave").click();
+    await b.page.locator("#room-code").fill(trainingRoom);
+    await b.page.locator("#join").click();
+    await until(
+      () => b.wire.state.players.some((p) => p.id === dummy.id && p.dummy),
+      "joining friend sees the existing dummy",
+    );
+    await a.page.locator("#menu-button").click();
+    for (let count = 4; count <= 8; count++) {
+      await a.page.locator("#add-dummy").click();
+      await until(
+        () => a.wire.state.players.length === count,
+        "added dummy occupies a room slot",
+      );
+    }
+    await until(
+      () => b.wire.state.players.length === 8,
+      "all dummies reach the other client",
+    );
+    await a.page.locator("#add-dummy:disabled").waitFor();
+    await b.page.locator("#menu-button").click();
+    await b.page.locator("#remove-dummies").click();
+    await until(
+      () =>
+        [a, b].every(
+          (c) =>
+            c.wire.state.players.length === 2 &&
+            c.wire.state.players.every((p) => !p.dummy),
+        ),
+      "another player removes dummies from both clients",
+    );
+    assert.equal(a.wire.state.phase, "playing");
+    await a.page.locator("#remove-dummies:disabled").waitFor();
+    assert.equal(await a.page.locator("#add-dummy").isEnabled(), true);
+    console.log(
+      "PASS shared dummy controls, room capacity and removal without interrupting human PvP",
+    );
     assert.deepEqual(errors, []);
     console.log("PASS no browser JavaScript errors");
   } finally {

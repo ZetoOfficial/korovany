@@ -1,7 +1,6 @@
 package game
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -32,6 +31,8 @@ type Player struct {
 	RespawnTick    uint64            `json:"respawnTick"`
 	ShieldTick     uint64            `json:"shieldTick"`
 	Connected      bool              `json:"connected"`
+	Dummy          bool              `json:"dummy,omitempty"`
+	dummySpawn     *Spawn
 	queue          []queuedInput
 	lastSeq        uint64
 	disconnectedAt uint64
@@ -67,6 +68,7 @@ type Match struct {
 	EndTick         uint64
 	Players         map[string]*Player
 	nextID, eventID uint64
+	nextDummy       uint64
 	events          []Event
 	history         []historyFrame
 }
@@ -86,7 +88,7 @@ func (m *Match) ordered() []*Player {
 
 func (m *Match) Add(name string) (*Player, error) {
 	if len(m.Players) >= m.World.Rules.MaxPlayers {
-		return nil, errors.New("В комнате уже 8 игроков.")
+		return nil, fmt.Errorf("В комнате уже %d бойцов.", m.World.Rules.MaxPlayers)
 	}
 	m.nextID++
 	p := &Player{ID: fmt.Sprint(m.nextID), Name: name, Faction: []string{"elf", "evil", "guard", "human"}[(m.nextID-1)%4], Connected: true}
@@ -95,8 +97,32 @@ func (m *Match) Add(name string) (*Player, error) {
 	return p, nil
 }
 
+// Dummies use the same combat and respawn rules as players, without an input
+// stream or a network session. Keep their spawn fixed for repeatable tests.
+func (m *Match) AddDummy() (*Player, error) {
+	p, err := m.Add(fmt.Sprintf("Манекен %d", m.nextDummy+1))
+	if err != nil {
+		return nil, err
+	}
+	m.nextDummy++
+	p.Dummy = true
+	p.dummySpawn = &Spawn{X: p.X, Z: p.Z, Yaw: p.Yaw}
+	return p, nil
+}
+
+func (m *Match) RemoveDummies() int {
+	removed := 0
+	for id, p := range m.Players {
+		if p.Dummy {
+			delete(m.Players, id)
+			removed++
+		}
+	}
+	return removed
+}
+
 func (m *Match) Disconnect(id string) {
-	if p := m.Players[id]; p != nil {
+	if p := m.Players[id]; p != nil && !p.Dummy {
 		p.Connected = false
 		p.queue = nil
 		p.Blocking = false
@@ -106,7 +132,7 @@ func (m *Match) Disconnect(id string) {
 
 func (m *Match) Resume(id string) bool {
 	p := m.Players[id]
-	if p == nil || p.Connected {
+	if p == nil || p.Dummy || p.Connected {
 		return false
 	}
 	p.Connected = true
@@ -130,7 +156,7 @@ func (m *Match) Input(id string, i Input) bool {
 // queueSeconds covers time spent waiting in the room's transport queue.
 func (m *Match) InputDelayed(id string, i Input, queueSeconds float64) bool {
 	p := m.Players[id]
-	if p == nil || !p.Connected || !i.Valid() || (i.Life != 0 && i.Life != p.Life) || i.Seq <= p.lastSeq || i.Seq-p.lastSeq > 4096 {
+	if p == nil || p.Dummy || !p.Connected || !i.Valid() || (i.Life != 0 && i.Life != p.Life) || i.Seq <= p.lastSeq || i.Seq-p.lastSeq > 4096 {
 		return false
 	}
 	p.lastSeq = i.Seq
@@ -146,13 +172,16 @@ func (m *Match) respawn(p *Player) {
 	for _, s := range m.World.Spawns {
 		d := math.Inf(1)
 		for _, other := range m.Players {
-			if other.ID != p.ID && other.Health > 0 {
+			if other.ID != p.ID && (other.Health > 0 || other.Dummy) {
 				d = math.Min(d, math.Hypot(s.X-other.X, s.Z-other.Z))
 			}
 		}
 		if d > bestDistance {
 			best, bestDistance = s, d
 		}
+	}
+	if p.dummySpawn != nil {
+		best = *p.dummySpawn
 	}
 	p.Motion = Motion{X: best.X, Z: best.Z, Yaw: best.Yaw, Stamina: 100}
 	p.Health = 100

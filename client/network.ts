@@ -1,6 +1,7 @@
 import {
   protocolVersion,
   world,
+  type DummyAction,
   type Input,
   type ServerMessage,
   type Snapshot,
@@ -18,6 +19,7 @@ export interface NetworkEvents {
   status(message: string, online: boolean): void;
   failed(message: string): void;
   ping(milliseconds: number): void;
+  dummyResult(message: string): void;
 }
 
 export class MatchConnection implements Transport {
@@ -84,6 +86,8 @@ export class MatchConnection implements Transport {
         this.events.welcome(message);
         this.events.status("На связи", true);
       } else if (message.type === "snapshot") this.events.snapshot(message);
+      else if (message.type === "dummy_result")
+        this.events.dummyResult(message.message);
       else if (message.type === "probe")
         socket.send(
           JSON.stringify({ type: "probe_ack", probe: message.probe }),
@@ -122,6 +126,14 @@ export class MatchConnection implements Transport {
   }
 
   send(input: Input): boolean {
+    return this.sendMessage({ type: "input", input });
+  }
+
+  manageDummies(action: DummyAction): boolean {
+    return this.sendMessage({ type: action });
+  }
+
+  private sendMessage(message: { type: string; input?: Input }): boolean {
     if (
       !this.ready ||
       !this.socket ||
@@ -129,7 +141,7 @@ export class MatchConnection implements Transport {
       this.socket.bufferedAmount > 16_384
     )
       return false;
-    this.socket.send(JSON.stringify({ type: "input", input }));
+    this.socket.send(JSON.stringify(message));
     return true;
   }
 

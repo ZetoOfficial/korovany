@@ -16,9 +16,10 @@ import (
 )
 
 type testClient struct {
-	conn      *websocket.Conn
-	id, token string
-	snapshots chan game.Snapshot
+	conn         *websocket.Conn
+	id, token    string
+	snapshots    chan game.Snapshot
+	dummyResults chan string
 }
 
 func testServer(t *testing.T) *httptest.Server {
@@ -68,14 +69,15 @@ func dial(t *testing.T, h *httptest.Server, room, name, token string) *testClien
 	if welcome.Type != "welcome" || welcome.ID == "" || welcome.Token == "" {
 		t.Fatalf("bad welcome: %+v", welcome)
 	}
-	c := &testClient{conn: conn, id: welcome.ID, token: welcome.Token, snapshots: make(chan game.Snapshot, 128)}
+	c := &testClient{conn: conn, id: welcome.ID, token: welcome.Token, snapshots: make(chan game.Snapshot, 128), dummyResults: make(chan string, 16)}
 	c.snapshots <- welcome.Snapshot
 	go func() {
 		defer close(c.snapshots)
 		for {
 			var message struct {
 				game.Snapshot
-				Probe string `json:"probe"`
+				Probe   string `json:"probe"`
+				Message string `json:"message"`
 			}
 			if err := wsjson.Read(context.Background(), conn, &message); err != nil {
 				return
@@ -90,6 +92,10 @@ func dial(t *testing.T, h *httptest.Server, room, name, token string) *testClien
 				continue
 			}
 			s := message.Snapshot
+			if s.Type == "dummy_result" {
+				c.dummyResults <- message.Message
+				continue
+			}
 			if s.Type != "snapshot" {
 				continue
 			}
@@ -100,6 +106,64 @@ func dial(t *testing.T, h *httptest.Server, room, name, token string) *testClien
 		}
 	}()
 	return c
+}
+
+func TestRoomDummiesAreSharedAndBounded(t *testing.T) {
+	h := testServer(t)
+	room := create(t, h)
+	a := dial(t, h, room, "Путник", "")
+	command := func(c *testClient, kind string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := wsjson.Write(ctx, c.conn, envelope{Type: kind}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case message := <-c.dummyResults:
+			return message
+		case <-ctx.Done():
+			t.Fatal("dummy command was not acknowledged")
+			return ""
+		}
+	}
+	command(a, "add_dummy")
+	s := a.until(t, func(s game.Snapshot) bool { return s.Phase == "playing" && len(s.Players) == 2 })
+	var dummy game.Player
+	for _, p := range s.Players {
+		if p.Dummy {
+			dummy = p
+		}
+	}
+	if dummy.ID == "" || !dummy.Connected || dummy.Health != 100 {
+		t.Fatal("solo player did not receive the dummy's authoritative state")
+	}
+	b := dial(t, h, room, "Друг", "")
+	s = b.until(t, func(s game.Snapshot) bool { return len(s.Players) == 3 })
+	if p := state(s, dummy.ID); !p.Dummy || p.X != dummy.X || p.Z != dummy.Z {
+		t.Fatal("joining client did not see the same dummy")
+	}
+	for i := 3; i < game.LoadWorld().Rules.MaxPlayers; i++ {
+		command(a, "add_dummy")
+	}
+	if message := command(a, "add_dummy"); !strings.Contains(message, "уже 8") {
+		t.Fatalf("capacity error was not returned: %s", message)
+	}
+	b.until(t, func(s game.Snapshot) bool { return len(s.Players) == 8 })
+	command(b, "remove_dummies") // Any current human peer can manage them.
+	for _, c := range []*testClient{a, b} {
+		s = c.until(t, func(s game.Snapshot) bool { return len(s.Players) == 2 })
+		if state(s, a.id).ID == "" || state(s, b.id).ID == "" || s.Phase != "playing" {
+			t.Fatal("removing dummies removed humans or interrupted their match")
+		}
+	}
+	command(a, "add_dummy")
+	a.until(t, func(s game.Snapshot) bool { return len(s.Players) == 3 })
+	isolated := dial(t, h, create(t, h), "Другая комната", "")
+	s = isolated.until(t, func(s game.Snapshot) bool { return len(s.Players) == 1 })
+	if s.Players[0].Dummy {
+		t.Fatal("dummy state leaked into a different room")
+	}
 }
 
 func TestServerMeasurementEnablesViewValidation(t *testing.T) {

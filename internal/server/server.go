@@ -20,7 +20,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-const ProtocolVersion = 3
+const ProtocolVersion = 4
 
 // BuildRevision is set by the release build to identify the running artifact.
 var BuildRevision = "dev"
@@ -271,6 +271,10 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch e.Type {
+		case "add_dummy", "remove_dummies":
+			if !room.submit(operation{kind: e.Type, peer: p}) {
+				return
+			}
 		case "input":
 			if !e.Input.Valid() {
 				_ = conn.Close(websocket.StatusPolicyViolation, "Некорректное управление.")

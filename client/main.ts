@@ -7,6 +7,7 @@ import {
   interpolationTicks,
   rules,
   stepSeconds,
+  type DummyAction,
   type Snapshot,
   type Welcome,
   type ViewTime,
@@ -24,6 +25,9 @@ const lobby = el("lobby"),
   pause = el("pause");
 const createButton = el<HTMLButtonElement>("create"),
   joinButton = el<HTMLButtonElement>("join");
+const addDummyButton = el<HTMLButtonElement>("add-dummy"),
+  removeDummiesButton = el<HTMLButtonElement>("remove-dummies");
+let dummyPending = false;
 const prediction = new Prediction(),
   snapshots = new SnapshotBuffer();
 let feedback = new AttackFeedback();
@@ -64,12 +68,34 @@ function lobbyStatus(message: string, error = false) {
   el("lobby-status").classList.toggle("error", error);
 }
 
+function updateDummyControls() {
+  const count = snapshot?.players.filter((p) => p.dummy).length ?? 0;
+  el("dummy-count").textContent = String(count);
+  addDummyButton.disabled =
+    !online ||
+    dummyPending ||
+    !snapshot ||
+    snapshot.players.length >= rules.maxPlayers;
+  removeDummiesButton.disabled = !online || dummyPending || count === 0;
+}
+
+function manageDummies(action: DummyAction) {
+  dummyPending = connection?.manageDummies(action) ?? false;
+  el("dummy-status").textContent = dummyPending
+    ? "Ждём ответ сервера…"
+    : "Нет связи с сервером. Попробуй после подключения.";
+  updateDummyControls();
+}
+
 function leave(message = "Создай комнату или введи код приглашения.") {
   connection?.close();
   connection = null;
   self = "";
   online = false;
   snapshot = null;
+  dummyPending = false;
+  el("dummy-status").textContent = "";
+  updateDummyControls();
   prediction.player = null;
   prediction.pending = [];
   snapshots.clear();
@@ -91,6 +117,7 @@ function leave(message = "Создай комнату или введи код �
 function receive(next: Snapshot) {
   if (snapshot && next.tick <= snapshot.tick) return;
   snapshot = next;
+  updateDummyControls();
   lastSnapshot = performance.now();
   snapshots.push(next);
   const player = next.players.find((p) => p.id === self);
@@ -145,6 +172,8 @@ function receive(next: Snapshot) {
 }
 
 function welcome(message: Welcome) {
+  dummyPending = false;
+  el("dummy-status").textContent = "";
   self = message.id;
   room = message.room;
   seq = 0;
@@ -192,6 +221,8 @@ async function join(makeRoom: boolean) {
       snapshot: receive,
       status(message, connected) {
         online = connected;
+        if (!connected) dummyPending = false;
+        updateDummyControls();
         el("connection").textContent = message;
         controls.setEnabled(connected && !menuOpen);
         if (!connected) controls.clear();
@@ -203,6 +234,11 @@ async function join(makeRoom: boolean) {
       },
       ping(milliseconds) {
         el("ping").textContent = `${milliseconds} мс`;
+      },
+      dummyResult(message) {
+        dummyPending = false;
+        el("dummy-status").textContent = message;
+        updateDummyControls();
       },
     });
   } catch (error) {
@@ -232,6 +268,10 @@ for (const [id, weapon] of [
 }
 el("resume").addEventListener("click", () => setMenu(false));
 el("leave").addEventListener("click", () => leave());
+addDummyButton.addEventListener("click", () => manageDummies("add_dummy"));
+removeDummiesButton.addEventListener("click", () =>
+  manageDummies("remove_dummies"),
+);
 el<HTMLInputElement>("low-quality").addEventListener("change", (event) =>
   view.setQuality((event.target as HTMLInputElement).checked),
 );
@@ -256,7 +296,11 @@ pause.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key !== "Tab") return;
-  const items = [...pause.querySelectorAll<HTMLElement>("button, input")];
+  const items = [
+    ...pause.querySelectorAll<HTMLElement>(
+      "button:not(:disabled), input:not(:disabled)",
+    ),
+  ];
   if (event.shiftKey && document.activeElement === items[0]) {
     event.preventDefault();
     items.at(-1)?.focus();
@@ -306,7 +350,7 @@ function updateHUD(now: number) {
   let notice = "";
   if (!online || now - lastSnapshot > 750) notice = "Ждём связь с сервером…";
   else if (snapshot.phase === "waiting")
-    notice = "Пригласи соперника по коду комнаты";
+    notice = "Пригласи соперника или добавь манекена: меню · P";
   else if (snapshot.phase === "countdown") notice = `${seconds || 1}`;
   else if (snapshot.phase === "finished") {
     const ranked = [...snapshot.players].sort((a, b) => b.kills - a.kills);
@@ -328,7 +372,7 @@ function updateHUD(now: number) {
       row.classList.toggle("offline", !p.connected);
       const name = document.createElement("span"),
         score = document.createElement("small");
-      name.textContent = `${p.name}${p.id === self ? " · ты" : ""}${!p.connected ? " · нет связи" : ""}`;
+      name.textContent = `${p.name}${p.dummy ? ` · ${p.health} HP` : ""}${p.id === self ? " · ты" : ""}${!p.connected ? " · нет связи" : ""}`;
       score.textContent = `${p.kills} / ${p.deaths}`;
       row.append(name, score);
       return row;
