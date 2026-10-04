@@ -17,6 +17,9 @@ func TestMovingTargetDodgesWindupAt200ms(t *testing.T) {
 	m.SetLatency(a.ID, 0.2, 0)
 	m.Input(a.ID, Input{Seq: 1, Attack: true, View: view})
 	m.Step()
+	if a.LastAttackSeq != 1 {
+		t.Fatalf("200 ms sword command must be accepted before testing the dodge: %+v", a.LastCombat)
+	}
 	resolveSword(t, m, a)
 	if b.Health != 100 {
 		t.Fatalf("windup froze historical target: health=%v", b.Health)

@@ -317,9 +317,9 @@ async function movementScenario(browser, rtt, jitter) {
   }
 }
 
-async function scenario(browser, targetRTT, jitter) {
+async function scenario(browser, attackerRTT, targetRTT, jitter) {
   const errors = [];
-  const a = await client(browser, "Лучник", 200, jitter, errors);
+  const a = await client(browser, "Лучник", attackerRTT, jitter, errors);
   const b = await client(browser, "Бегущий", targetRTT, jitter, errors);
   try {
     await a.page.locator("#create").click();
@@ -353,7 +353,7 @@ async function scenario(browser, targetRTT, jitter) {
     await a.page.keyboard.down("e");
     await until(
       () => stateOf(a, a.wire.id).bowDrawTicks === 60,
-      "full draw at 200 ms RTT",
+      `full draw at ${attackerRTT} ms RTT`,
     );
     assert.equal(stateOf(a, a.wire.id).arrows, 20);
     assert.equal(hits(a, b).length, 0);
@@ -399,7 +399,7 @@ async function scenario(browser, targetRTT, jitter) {
     assert.equal(stateOf(a, a.wire.id).arrows, stateOf(b, a.wire.id).arrows);
     assert.equal(stateOf(a, a.wire.id).lastCombat.rewindMs, 0);
     console.log(
-      `PASS bow draw, dodge after release and ballistic hit at RTT 200/${targetRTT} ms, jitter +/-${jitter} ms`,
+      `PASS bow draw, dodge after release and ballistic hit at RTT ${attackerRTT}/${targetRTT} ms, jitter +/-${jitter} ms`,
     );
 
     await a.page.keyboard.press("1");
@@ -433,16 +433,37 @@ async function scenario(browser, targetRTT, jitter) {
     await b.page.keyboard.down("w");
     await sleep(180);
     const previousAttack = stateOf(a, a.wire.id).lastAttackSeq;
+    const previousCommand = stateOf(a, a.wire.id).lastCombat?.seq ?? 0;
     await a.page.keyboard.press("e");
     await until(
-      () => stateOf(a, a.wire.id).lastAttackSeq > previousAttack,
-      "sword command accepted within the rewind window",
+      () => stateOf(a, a.wire.id).lastCombat?.seq > previousCommand,
+      "server evaluates the sword command",
     );
+    const combat = stateOf(a, a.wire.id).lastCombat;
+    const rejected = combat.outcome === "rejected";
+    if (rejected) {
+      // At 200 ms RTT, interpolation, rendering and the input queue can push
+      // the actual view past 350 ms. That rejection is required, not a timeout.
+      // The lower-RTT scenario below must exercise an accepted sword windup.
+      assert.equal(
+        attackerRTT,
+        200,
+        "lower-RTT sword command must be accepted",
+      );
+      assert.equal(combat.reason, "stale_view");
+      assert.ok(combat.rewindMs > 350, "only an expired view may be rejected");
+      assert.equal(stateOf(a, a.wire.id).lastAttackSeq, previousAttack);
+    } else {
+      assert.ok(stateOf(a, a.wire.id).lastAttackSeq > previousAttack);
+      assert.ok(combat.rewindMs <= 350, "accepted view stays within the cap");
+    }
     await sleep(900); // Includes windup, active blade sweep and transport delay.
     assert.equal(
       hits(a, b).length,
       previousHits,
-      "a fleeing target can leave reach during the windup",
+      rejected
+        ? "an expired attack cannot damage the target"
+        : "a fleeing target can leave reach during the windup",
     );
     await b.page.keyboard.up("w");
     await b.page.keyboard.up("Shift");
@@ -451,7 +472,9 @@ async function scenario(browser, targetRTT, jitter) {
     assert.equal(stateOf(a, a.wire.id).kills, stateOf(b, a.wire.id).kills);
     assert.deepEqual(errors, []);
     console.log(
-      `PASS sword windup dodge at RTT 200/${targetRTT} ms; both clients agree`,
+      rejected
+        ? `PASS expired sword view rejected (${combat.rewindMs.toFixed(1)} ms > 350 ms) at RTT ${attackerRTT}/${targetRTT} ms; both clients agree`
+        : `PASS sword windup dodge at RTT ${attackerRTT}/${targetRTT} ms; both clients agree`,
     );
   } catch (error) {
     console.error(
@@ -477,8 +500,8 @@ async function scenario(browser, targetRTT, jitter) {
   try {
     for (const rtt of [0, 100, 200])
       await movementScenario(browser, rtt, rtt === 200 ? 8 : 0);
-    await scenario(browser, 200, 0);
-    await scenario(browser, 100, 8);
+    await scenario(browser, 200, 200, 0);
+    await scenario(browser, 100, 200, 8);
   } finally {
     await browser.close();
   }
