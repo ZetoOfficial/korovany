@@ -2,7 +2,7 @@ import { canBow, canWalk, limbMissing, combat, partNames } from "./combat.ts";
 import "./style.css";
 import { ArenaView } from "./render/arena.ts";
 import { Controls } from "./input.ts";
-import { MatchConnection, createRoom, snapshotFreshness } from "./network.ts";
+import { MatchConnection, createRoom } from "./network.ts";
 import {
   AttackFeedback,
   InputPacer,
@@ -604,18 +604,15 @@ let last = performance.now(),
   fpsTimer = 0,
   frames = 0;
 function frame(now: number) {
-  const freshness = snapshotFreshness(now, last, lastSnapshot);
   const elapsed = Math.min((now - last) / 1000, 0.25);
   last = now;
   accumulator = Math.min(accumulator + elapsed, 5 * stepSeconds);
-  const healthy = online && freshness === "fresh";
+  const healthy = online && now - lastSnapshot < 750;
   const active = snapshot?.phase === "playing" || snapshot?.phase === "waiting";
+  // Late snapshots pause sending below, but must not erase physical key state.
+  // Transport loss, menu, death and focus changes still clear controls.
   controls.setEnabled(
-    online &&
-      freshness !== "lost" &&
-      !menuOpen &&
-      !!active &&
-      (prediction.player?.health ?? 0) > 0,
+    online && !menuOpen && !!active && (prediction.player?.health ?? 0) > 0,
   );
   while (accumulator >= stepSeconds) {
     if (healthy && connection && prediction.player && inputPacer.advance(seq)) {

@@ -8,20 +8,6 @@ import {
   type Welcome,
 } from "./protocol.ts";
 
-export function snapshotFreshness(
-  now: number,
-  previousFrame: number,
-  lastSnapshot: number,
-): "fresh" | "stalled" | "lost" {
-  if (now - lastSnapshot < 750) return "fresh";
-  // A slow frame can run before the WebSocket callbacks queued during the
-  // stall. Preserve held controls for this frame, but send no new input.
-  // Another stale frame gets no grace, even if it also takes a long time.
-  if (now - previousFrame > 250 && previousFrame - lastSnapshot < 750)
-    return "stalled";
-  return "lost";
-}
-
 export interface Transport {
   send(input: Input): boolean;
   close(): void;

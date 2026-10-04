@@ -75,10 +75,21 @@ async function until(condition, label, timeout = 10000) {
         welcomes: 0,
         server: null,
         input: null,
+        holdIncoming: null,
+        resumeIncoming: null,
       };
       page.on("pageerror", (error) => errors.push(error.message));
       await page.routeWebSocket("**/ws/*", (socket) => {
         const server = (wire.server = socket.connectToServer());
+        let held = false;
+        const pending = [];
+        wire.holdIncoming = () => {
+          held = true;
+        };
+        wire.resumeIncoming = () => {
+          held = false;
+          for (const payload of pending.splice(0)) socket.send(payload);
+        };
         socket.onMessage((payload) => {
           const message = JSON.parse(payload.toString());
           if (message.type === "input") wire.input = message.input;
@@ -92,7 +103,8 @@ async function until(condition, label, timeout = 10000) {
             wire.welcomes++;
           }
           if (message.type === "snapshot") wire.state = message;
-          socket.send(payload);
+          if (held) pending.push(payload);
+          else socket.send(payload);
         });
       });
       await page.goto(new URL("arena/", url).href);
@@ -442,6 +454,40 @@ async function until(condition, label, timeout = 10000) {
     console.log(
       "PASS shared dummy controls, room capacity and removal without interrupting human PvP",
     );
+
+    // A live transport can temporarily stop delivering snapshots. Commands
+    // must pause after 750 ms, while real keys remain usable on recovery.
+    await a.page.locator("#resume").click();
+    await a.page.bringToFront();
+    await a.page.keyboard.press("2");
+    await until(
+      () => a.wire.state.players.find((p) => p.id === a.wire.id).weapon === 2,
+      "bow equipped before snapshot stall",
+    );
+    a.wire.holdIncoming();
+    await a.page
+      .locator("#center-notice")
+      .filter({
+        hasText: "Ждём связь с сервером",
+      })
+      .waitFor();
+    await sleep(250);
+    const stoppedSeq = a.wire.input.seq;
+    await a.page.keyboard.down("e");
+    await sleep(250);
+    assert.equal(
+      a.wire.input.seq,
+      stoppedSeq,
+      "stale state must send no commands",
+    );
+    a.wire.resumeIncoming();
+    await until(
+      () =>
+        a.wire.state.players.find((p) => p.id === a.wire.id).bowDrawTicks >= 20,
+      "held key survives until fresh snapshots resume",
+    );
+    await a.page.keyboard.up("e");
+    console.log("PASS snapshot stalls pause commands without losing held keys");
     assert.deepEqual(errors, []);
     console.log("PASS no browser JavaScript errors");
   } finally {
