@@ -42,6 +42,8 @@ type operation struct {
 	peer        *peer
 	name, token string
 	input       game.Input
+	receivedAt  time.Time
+	rtt, jitter float64
 	reply       chan error
 }
 
@@ -132,7 +134,11 @@ func (r *room) run(remove func()) {
 				}
 			case "input":
 				if peers[op.peer.id] == op.peer {
-					m.Input(op.peer.id, op.input)
+					m.InputDelayed(op.peer.id, op.input, time.Since(op.receivedAt).Seconds())
+				}
+			case "latency":
+				if peers[op.peer.id] == op.peer {
+					m.SetLatency(op.peer.id, op.rtt, op.jitter)
 				}
 			}
 		case now := <-ticker.C:

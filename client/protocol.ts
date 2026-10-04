@@ -2,10 +2,19 @@ import arena from "../internal/game/data/arena.json";
 
 export const world = arena;
 export const rules = arena.rules;
-export const protocolVersion = 2;
+export const protocolVersion = 3;
 export const stepSeconds = 1 / rules.tickRate;
+export const interpolationTicks = rules.tickRate * 0.1;
+
+export interface ViewTime {
+  tick: number;
+  from: number;
+  to: number;
+}
 
 export interface Input {
+  life?: number;
+  view?: ViewTime;
   weapon: 1 | 2;
   seq: number;
   forward: number;
@@ -30,6 +39,15 @@ export interface Motion {
 }
 
 export interface Player extends Motion {
+  lastCombat?: {
+    tick: number;
+    seq: number;
+    outcome: "rejected" | "miss" | "hit";
+    reason: string;
+    commandAgeMs: number;
+    queueMs: number;
+    rewindMs: number;
+  };
   weapon: 1 | 2;
   arrows: number;
   id: string;
@@ -41,6 +59,9 @@ export interface Player extends Motion {
   ack: number;
   life: number;
   attackTick: number;
+  lastAttackSeq: number;
+  nextAttackTick: number;
+  attackWeapon: number;
   respawnTick: number;
   shieldTick: number;
   connected: boolean;
@@ -52,6 +73,8 @@ export interface GameEvent {
   actor: string;
   target?: string;
   damage?: number;
+  seq?: number;
+  life?: number;
   from?: { x: number; y: number; z: number };
   to?: { x: number; y: number; z: number };
 }
@@ -72,4 +95,8 @@ export interface Welcome {
   mapVersion: string;
   snapshot: Snapshot;
 }
-export type ServerMessage = Welcome | Snapshot | { type: "pong"; time: number };
+export type ServerMessage =
+  | Welcome
+  | Snapshot
+  | { type: "pong"; time: number }
+  | { type: "probe"; probe: string };

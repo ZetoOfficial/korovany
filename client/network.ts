@@ -84,6 +84,10 @@ export class MatchConnection implements Transport {
         this.events.welcome(message);
         this.events.status("На связи", true);
       } else if (message.type === "snapshot") this.events.snapshot(message);
+      else if (message.type === "probe")
+        socket.send(
+          JSON.stringify({ type: "probe_ack", probe: message.probe }),
+        );
       else if (message.type === "pong")
         this.events.ping(Math.round(performance.now() - message.time));
     };

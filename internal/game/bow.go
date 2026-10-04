@@ -32,7 +32,7 @@ func rayBox(origin, direction, low, high Vec3, limit float64) (float64, bool) {
 	return near, true
 }
 
-func (m *Match) shoot(p *Player) {
+func (m *Match) shoot(p *Player, targets []*Player, viewTick float64, diagnostic *CombatDiagnostic) {
 	r := m.World.Rules
 	origin := Vec3{p.X, p.Y + 1.8, p.Z}
 	direction := Vec3{-math.Sin(p.Yaw) * math.Cos(p.Pitch), math.Sin(p.Pitch), -math.Cos(p.Yaw) * math.Cos(p.Pitch)}
@@ -43,10 +43,11 @@ func (m *Match) shoot(p *Player) {
 	for _, o := range m.World.Obstacles {
 		if d, hit := rayBox(origin, direction, Vec3{o.X - o.W/2, 0, o.Z - o.D/2}, Vec3{o.X + o.W/2, o.Height, o.Z + o.D/2}, nearest); hit {
 			nearest = d
+			diagnostic.Reason = "wall"
 		}
 	}
 	var target *Player
-	for _, other := range m.ordered() {
+	for _, other := range targets {
 		if other.ID == p.ID || other.Health <= 0 {
 			continue
 		}
@@ -58,8 +59,11 @@ func (m *Match) shoot(p *Player) {
 	m.emit("arrow", p.ID, "", 0)
 	event := &m.events[len(m.events)-1]
 	event.From, event.To = &origin, &end
+	event.Seq, event.Life = p.LastAttackSeq, p.Life
 	// Spawn protection stops the arrow too; it cannot hit someone behind the shield.
-	if target != nil && m.Tick >= target.ShieldTick {
-		m.damage(p, target, r.BowDamage)
+	if target != nil && viewTick >= float64(target.ShieldTick) {
+		m.damage(p, target, r.BowDamage, diagnostic)
+	} else if target != nil {
+		diagnostic.Reason = "shield"
 	}
 }

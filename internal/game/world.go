@@ -74,21 +74,30 @@ func (w World) Clear(ax, az, bx, bz float64) bool {
 }
 
 type Input struct {
-	Weapon  int     `json:"weapon,omitempty"`
-	Seq     uint64  `json:"seq"`
-	Forward float64 `json:"forward"`
-	Strafe  float64 `json:"strafe"`
-	Yaw     float64 `json:"yaw"`
-	Pitch   float64 `json:"pitch"`
-	Jump    bool    `json:"jump"`
-	Sprint  bool    `json:"sprint"`
-	Attack  bool    `json:"attack"`
-	Block   bool    `json:"block"`
+	Life    uint64    `json:"life,omitempty"`
+	View    *ViewTime `json:"view,omitempty"`
+	Weapon  int       `json:"weapon,omitempty"`
+	Seq     uint64    `json:"seq"`
+	Forward float64   `json:"forward"`
+	Strafe  float64   `json:"strafe"`
+	Yaw     float64   `json:"yaw"`
+	Pitch   float64   `json:"pitch"`
+	Jump    bool      `json:"jump"`
+	Sprint  bool      `json:"sprint"`
+	Attack  bool      `json:"attack"`
+	Block   bool      `json:"block"`
 }
 
 func (i Input) Valid() bool {
 	for _, v := range []float64{i.Forward, i.Strafe, i.Yaw, i.Pitch} {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return false
+		}
+	}
+	if i.View != nil {
+		// Keep arithmetic and JSON diagnostics finite, including for hostile
+		// finite values near MaxFloat64. Ticks must also be exact JS integers.
+		if math.IsNaN(i.View.Tick) || math.IsInf(i.View.Tick, 0) || math.Abs(i.View.Tick) >= 1<<53 || i.View.From >= 1<<53 || i.View.To >= 1<<53 {
 			return false
 		}
 	}

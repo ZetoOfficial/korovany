@@ -10,7 +10,8 @@
     "format": "prettier --write client arena vite.config.ts tsconfig.json tests/multiplayer.cjs",
     "test": "node --import tsx --test client/tests/*.test.ts",
     "test:campaign": "node tests/browser.cjs",
-    "test:multiplayer": "node tests/multiplayer.cjs"
+    "test:multiplayer": "node tests/multiplayer.cjs",
+    "test:latency": "node --import tsx tests/latency.cjs"
   },
   "dependencies": {
     "three": "0.170.0"

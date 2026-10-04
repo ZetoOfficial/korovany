@@ -2,8 +2,15 @@ import "./style.css";
 import { ArenaView } from "./render/arena.ts";
 import { Controls } from "./input.ts";
 import { MatchConnection, createRoom } from "./network.ts";
-import { Prediction, SnapshotBuffer } from "./simulation.ts";
-import { rules, stepSeconds, type Snapshot, type Welcome } from "./protocol.ts";
+import { AttackFeedback, Prediction, SnapshotBuffer } from "./simulation.ts";
+import {
+  interpolationTicks,
+  rules,
+  stepSeconds,
+  type Snapshot,
+  type Welcome,
+  type ViewTime,
+} from "./protocol.ts";
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -19,6 +26,12 @@ const createButton = el<HTMLButtonElement>("create"),
   joinButton = el<HTMLButtonElement>("join");
 const prediction = new Prediction(),
   snapshots = new SnapshotBuffer();
+let feedback = new AttackFeedback();
+let displayedView: ViewTime | undefined;
+
+function animateAttack(life: number, seq: number, weapon: number, now: number) {
+  if (feedback.take(life, seq)) view.attack(weapon, now);
+}
 let connection: MatchConnection | null = null;
 let snapshot: Snapshot | null = null;
 let self = "",
@@ -87,13 +100,27 @@ function receive(next: Snapshot) {
     prediction.reconcile(
       player,
       next.phase === "playing" || next.phase === "waiting",
+      next.tick,
+      next.phase === "playing",
     );
     if (newLife) {
       controls.yaw = player.yaw;
       controls.pitch = player.pitch;
       controls.weapon = player.weapon;
       controls.clear();
+      displayedView = undefined;
+      view.resetAttack();
     }
+    if (
+      player.lastAttackSeq &&
+      next.tick - player.attackTick < rules.tickRate * 0.35
+    )
+      animateAttack(
+        player.life,
+        player.lastAttackSeq,
+        player.attackWeapon,
+        performance.now() / 1000,
+      );
   }
   for (const event of next.events) {
     if (event.id <= lastEvent) continue;
@@ -123,6 +150,8 @@ function welcome(message: Welcome) {
   seq = 0;
   snapshot = null;
   snapshots.clear();
+  displayedView = undefined;
+  feedback = new AttackFeedback();
   prediction.player = null;
   lastEvent = message.snapshot.events.at(-1)?.id ?? 0;
   receive(message.snapshot);
@@ -332,10 +361,16 @@ function frame(now: number) {
   while (accumulator >= stepSeconds) {
     if (healthy && connection && prediction.player) {
       const input = controls.sample(++seq);
+      input.life = prediction.player.life;
+      input.view = displayedView;
       if (connection.send(input)) {
-        prediction.advance(input, active);
-        if (input.attack && input.weapon === 1 && snapshot?.phase === "playing")
-          view.swing(now / 1000);
+        if (prediction.advance(input, !!active, snapshot?.phase === "playing"))
+          animateAttack(
+            prediction.player.life,
+            input.seq,
+            input.weapon,
+            now / 1000,
+          );
       }
     }
     accumulator -= stepSeconds;
@@ -344,11 +379,13 @@ function frame(now: number) {
     ? snapshot.tick +
       Math.min((now - lastSnapshot) / 1000, 0.25) * rules.tickRate
     : 0;
+  const rendered = snapshots.sampleView(tick - interpolationTicks);
+  displayedView = rendered.view;
   view.render(
     prediction.player,
-    snapshots.sample(tick - 6),
+    rendered.players,
     self,
-    tick,
+    rendered.view?.tick ?? tick,
     controls.yaw,
     controls.pitch,
     elapsed,

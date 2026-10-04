@@ -216,9 +216,12 @@ export class ArenaView {
     this.camera.updateProjectionMatrix();
   }
 
-  swing(now: number) {
-    if (now - this.swingStart > rules.attackTicks / rules.tickRate)
-      this.swingStart = now;
+  attack(weapon: number, now: number) {
+    if (weapon === 2) this.shotStart = now;
+    else this.swingStart = now;
+  }
+  resetAttack() {
+    this.swingStart = this.shotStart = -10;
   }
   shot(event: GameEvent, localID: string) {
     if (!event.from || !event.to) return;
@@ -237,7 +240,6 @@ export class ArenaView {
     );
     this.scene.add(mesh);
     this.trails.push({ mesh, until: now + 0.18 });
-    if (event.actor === localID) this.shotStart = now;
   }
   setQuality(low: boolean) {
     this.renderer.setPixelRatio(low ? 0.85 : Math.min(devicePixelRatio, 1.5));

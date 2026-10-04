@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import cases from "../../internal/game/data/movement_cases.json";
-import { move, Prediction, SnapshotBuffer } from "../simulation.ts";
+import {
+  AttackFeedback,
+  move,
+  Prediction,
+  SnapshotBuffer,
+} from "../simulation.ts";
 import type { Input, Motion, Player, Snapshot } from "../protocol.ts";
 
 const input = (fields: Partial<Input> = {}): Input => ({
@@ -16,6 +21,120 @@ const input = (fields: Partial<Input> = {}): Input => ({
   attack: false,
   block: false,
   ...fields,
+});
+
+test("attack prediction reconciles resources without spending them twice", () => {
+  const prediction = new Prediction();
+  prediction.reset(player({ weapon: 2 }), 200);
+  const shot = input({ seq: 1, weapon: 2, attack: true });
+  assert.equal(prediction.advance(shot, true), true);
+  assert.equal(prediction.player!.arrows, 19);
+  const stamina = prediction.player!.stamina;
+  const cooldown = prediction.player!.nextAttackTick;
+  for (let i = 0; i < 3; i++) {
+    prediction.reconcile(player({ weapon: 2, ack: 0 }), true, 200);
+    assert.equal(prediction.player!.arrows, 19);
+    assert.equal(prediction.player!.stamina, stamina);
+    assert.equal(prediction.player!.nextAttackTick, cooldown);
+  }
+  prediction.reconcile(
+    player({
+      weapon: 2,
+      ack: 1,
+      arrows: 19,
+      stamina,
+      nextAttackTick: cooldown,
+      lastAttackSeq: 1,
+    }),
+    true,
+    201,
+  );
+  assert.equal(prediction.player!.arrows, 19);
+  assert.equal(prediction.pending.length, 0);
+  // A server rejection restores the authoritative ammunition/cooldown.
+  prediction.reconcile(player({ weapon: 2, ack: 1, arrows: 20 }), true, 201);
+  assert.equal(prediction.player!.arrows, 20);
+  assert.equal(prediction.player!.nextAttackTick, 0);
+});
+
+test("cooldown spans weapons; unavailable attacks do not animate", () => {
+  const prediction = new Prediction();
+  prediction.reset(player(), 100);
+  assert.equal(prediction.advance(input({ seq: 1, attack: true }), true), true);
+  for (let seq = 2; seq <= 32; seq++) {
+    assert.equal(
+      prediction.advance(input({ seq, attack: true, weapon: 2 }), true),
+      false,
+    );
+  }
+  assert.equal(prediction.player!.arrows, 20);
+  assert.equal(
+    prediction.advance(input({ seq: 33, attack: true, weapon: 2 }), true),
+    true,
+  );
+  assert.equal(prediction.player!.arrows, 19);
+  for (const state of [
+    { stamina: 0 },
+    { health: 0 },
+    { weapon: 2 as const, arrows: 0 },
+    { nextAttackTick: 999 },
+  ]) {
+    prediction.reset(player(state), 100);
+    assert.equal(
+      prediction.advance(
+        input({ attack: true, weapon: state.weapon ?? 1 }),
+        true,
+      ),
+      false,
+    );
+  }
+  prediction.reset(player(), 100);
+  assert.equal(prediction.advance(input({ attack: true }), true, false), false);
+});
+
+test("confirmed and predicted attacks share a deduplicated effect", () => {
+  const feedback = new AttackFeedback();
+  assert.equal(feedback.take(1, 42), true);
+  assert.equal(feedback.take(1, 42), false);
+  assert.equal(feedback.take(1, 43), true); // Unpredicted server acceptance.
+  assert.equal(feedback.take(1, 43), false);
+  assert.equal(feedback.take(2, 42), true); // Reconnect resets sequence numbers.
+  assert.equal(feedback.take(2, 0), false);
+});
+
+test("view reports the actual clamped snapshot pair and historical defense", () => {
+  const buffer = new SnapshotBuffer();
+  buffer.push(
+    snapshot(100, [
+      player({ x: 0, blocking: true, shieldTick: 105, yaw: Math.PI - 0.1 }),
+    ]),
+  );
+  buffer.push(
+    snapshot(106, [
+      player({ x: 6, blocking: false, shieldTick: 0, yaw: -Math.PI + 0.1 }),
+    ]),
+  );
+  const middle = buffer.sampleView(103);
+  assert.deepEqual(middle.view, { tick: 103, from: 100, to: 106 });
+  assert.equal(middle.players[0].x, 3);
+  assert.equal(middle.players[0].blocking, true);
+  assert.equal(middle.players[0].shieldTick, 105);
+  assert.ok(Math.abs(middle.players[0].yaw - Math.PI) < 1e-8);
+  assert.deepEqual(buffer.sampleView(90).view, {
+    tick: 100,
+    from: 100,
+    to: 100,
+  });
+  assert.deepEqual(buffer.sampleView(150).view, {
+    tick: 106,
+    from: 106,
+    to: 106,
+  });
+  assert.equal(buffer.sampleView(106).players[0].blocking, false);
+  buffer.push(snapshot(109, [player({ x: 20, life: 2 })]));
+  assert.equal(buffer.sampleView(103).players[0].x, 20);
+  buffer.clear();
+  assert.equal(buffer.sampleView(103).view, undefined);
 });
 const player = (fields: Partial<Player> = {}): Player => ({
   weapon: 1,
@@ -37,6 +156,9 @@ const player = (fields: Partial<Player> = {}): Player => ({
   ack: 0,
   life: 1,
   attackTick: 0,
+  lastAttackSeq: 0,
+  nextAttackTick: 0,
+  attackWeapon: 0,
   respawnTick: 0,
   shieldTick: 0,
   connected: true,
@@ -115,14 +237,18 @@ test("prediction cannot change health or score, and pauses while dead", () => {
   assert.equal(prediction.player!.kills, 0);
 });
 
-test("bow cannot block and prediction never spends authoritative ammunition", () => {
+test("bow predicts ammunition and corrects it from the acknowledged state", () => {
   const prediction = new Prediction();
   prediction.reset(player({ stamina: 80 }));
   prediction.advance(input({ weapon: 2, block: true, attack: true }), true);
   assert.equal(prediction.player!.weapon, 2);
   assert.equal(prediction.player!.blocking, false);
-  assert.equal(prediction.player!.arrows, 20);
-  prediction.reconcile(player({ ack: 0, arrows: 19 }), true);
+  assert.equal(prediction.player!.arrows, 19);
+  prediction.reconcile(
+    player({ ack: 1, weapon: 2, arrows: 19, nextAttackTick: 46 }),
+    true,
+    1,
+  );
   assert.equal(prediction.player!.weapon, 2);
   assert.equal(prediction.player!.arrows, 19);
 });

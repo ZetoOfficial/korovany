@@ -73,10 +73,23 @@ func dial(t *testing.T, h *httptest.Server, room, name, token string) *testClien
 	go func() {
 		defer close(c.snapshots)
 		for {
-			var s game.Snapshot
-			if err := wsjson.Read(context.Background(), conn, &s); err != nil {
+			var message struct {
+				game.Snapshot
+				Probe string `json:"probe"`
+			}
+			if err := wsjson.Read(context.Background(), conn, &message); err != nil {
 				return
 			}
+			if message.Type == "probe" {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				err := wsjson.Write(ctx, conn, envelope{Type: "probe_ack", Probe: message.Probe})
+				cancel()
+				if err != nil {
+					return
+				}
+				continue
+			}
+			s := message.Snapshot
 			if s.Type != "snapshot" {
 				continue
 			}
@@ -87,6 +100,25 @@ func dial(t *testing.T, h *httptest.Server, room, name, token string) *testClien
 		}
 	}()
 	return c
+}
+
+func TestServerMeasurementEnablesViewValidation(t *testing.T) {
+	h := testServer(t)
+	room := create(t, h)
+	a := dial(t, h, room, "Атакующий", "")
+	dial(t, h, room, "Цель", "")
+	s := a.until(t, func(s game.Snapshot) bool { return s.Phase == "playing" })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := wsjson.Write(ctx, a.conn, envelope{Type: "input", Input: game.Input{Seq: 1, Life: state(s, a.id).Life, Attack: true, Forward: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s = a.until(t, func(s game.Snapshot) bool { return state(s, a.id).Ack == 1 })
+	p := state(s, a.id)
+	if p.LastCombat == nil || p.LastCombat.Reason != "missing_view" || p.LastAttackSeq != 0 {
+		t.Fatalf("server probe was not measured or invalid attack accepted: %+v", p)
+	}
 }
 
 func (c *testClient) until(t *testing.T, accept func(game.Snapshot) bool) game.Snapshot {

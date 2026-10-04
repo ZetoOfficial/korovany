@@ -14,24 +14,29 @@ const (
 
 type Player struct {
 	Motion
-	ID             string  `json:"id"`
-	Name           string  `json:"name"`
-	Faction        string  `json:"faction"`
-	Health         float64 `json:"health"`
-	Weapon         int     `json:"weapon"`
-	Arrows         int     `json:"arrows"`
-	Kills          int     `json:"kills"`
-	Deaths         int     `json:"deaths"`
-	Ack            uint64  `json:"ack"`
-	Life           uint64  `json:"life"`
-	AttackTick     uint64  `json:"attackTick"`
-	RespawnTick    uint64  `json:"respawnTick"`
-	ShieldTick     uint64  `json:"shieldTick"`
-	Connected      bool    `json:"connected"`
-	queue          []Input
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Faction        string            `json:"faction"`
+	Health         float64           `json:"health"`
+	Weapon         int               `json:"weapon"`
+	Arrows         int               `json:"arrows"`
+	Kills          int               `json:"kills"`
+	Deaths         int               `json:"deaths"`
+	Ack            uint64            `json:"ack"`
+	Life           uint64            `json:"life"`
+	AttackTick     uint64            `json:"attackTick"`
+	LastAttackSeq  uint64            `json:"lastAttackSeq"`
+	NextAttackTick uint64            `json:"nextAttackTick"`
+	AttackWeapon   int               `json:"attackWeapon"`
+	LastCombat     *CombatDiagnostic `json:"lastCombat,omitempty"`
+	RespawnTick    uint64            `json:"respawnTick"`
+	ShieldTick     uint64            `json:"shieldTick"`
+	Connected      bool              `json:"connected"`
+	queue          []queuedInput
 	lastSeq        uint64
 	disconnectedAt uint64
-	nextAttackTick uint64
+	rtt, jitter    float64
+	latencyReady   bool
 }
 
 type Event struct {
@@ -40,6 +45,8 @@ type Event struct {
 	Actor  string  `json:"actor"`
 	Target string  `json:"target,omitempty"`
 	Damage float64 `json:"damage,omitempty"`
+	Seq    uint64  `json:"seq,omitempty"`
+	Life   uint64  `json:"life,omitempty"`
 	From   *Vec3   `json:"from,omitempty"`
 	To     *Vec3   `json:"to,omitempty"`
 }
@@ -61,6 +68,7 @@ type Match struct {
 	Players         map[string]*Player
 	nextID, eventID uint64
 	events          []Event
+	history         []historyFrame
 }
 
 func NewMatch() *Match {
@@ -107,19 +115,29 @@ func (m *Match) Resume(id string) bool {
 	p.Ack = 0
 	p.lastSeq = 0
 	p.Life++
+	p.LastAttackSeq = 0
+	p.AttackTick = 0
+	p.LastCombat = nil
+	p.latencyReady = false
+	p.rtt, p.jitter = 0, 0
 	return true
 }
 
 func (m *Match) Input(id string, i Input) bool {
+	return m.InputDelayed(id, i, 0)
+}
+
+// queueSeconds covers time spent waiting in the room's transport queue.
+func (m *Match) InputDelayed(id string, i Input, queueSeconds float64) bool {
 	p := m.Players[id]
-	if p == nil || !p.Connected || !i.Valid() || i.Seq <= p.lastSeq || i.Seq-p.lastSeq > 4096 {
+	if p == nil || !p.Connected || !i.Valid() || (i.Life != 0 && i.Life != p.Life) || i.Seq <= p.lastSeq || i.Seq-p.lastSeq > 4096 {
 		return false
 	}
 	p.lastSeq = i.Seq
 	if len(p.queue) >= 15 {
 		return false
 	}
-	p.queue = append(p.queue, i)
+	p.queue = append(p.queue, queuedInput{Input: i, receivedTick: float64(m.Tick) - math.Max(0, queueSeconds)*float64(m.World.Rules.TickRate)})
 	return true
 }
 
@@ -145,7 +163,10 @@ func (m *Match) respawn(p *Player) {
 	p.Life++
 	p.RespawnTick = 0
 	p.AttackTick = 0
-	p.nextAttackTick = 0
+	p.NextAttackTick = 0
+	p.LastAttackSeq = 0
+	p.AttackWeapon = 0
+	p.LastCombat = nil
 	p.ShieldTick = m.Tick + uint64(m.World.Rules.ShieldSeconds*float64(m.World.Rules.TickRate))
 	// Acknowledge discarded inputs so clients do not replay a previous life.
 	p.queue = nil
@@ -161,61 +182,110 @@ func (m *Match) emit(kind, actor, target string, damage float64) {
 }
 
 func (m *Match) attack(p *Player) {
+	m.attackInput(p, queuedInput{Input: Input{Seq: p.Ack}, receivedTick: float64(m.Tick)})
+}
+
+func (m *Match) attackInput(p *Player, q queuedInput) {
+	d := &CombatDiagnostic{Tick: m.Tick, Seq: q.Seq, Outcome: "rejected"}
+	p.LastCombat = d
 	r := m.World.Rules
+	d.QueueMS = math.Max(0, float64(m.Tick)-q.receivedTick) / float64(r.TickRate) * 1000
+	d.CommandAgeMS = d.QueueMS + p.rtt*500
+	if q.View != nil {
+		d.RewindMS = (float64(m.Tick) - q.View.Tick) / float64(r.TickRate) * 1000
+	}
 	cost, cooldown := r.AttackCost, r.AttackTicks
 	if p.Weapon == Bow {
 		cost, cooldown = r.BowCost, r.BowTicks
 		if p.Arrows <= 0 {
+			d.Reason = "ammo"
 			return
 		}
 	}
-	if m.Phase != "playing" || p.Health <= 0 || p.Stamina < cost || m.Tick < p.nextAttackTick {
+	switch {
+	case m.Phase != "playing":
+		d.Reason = "phase"
+	case p.Health <= 0:
+		d.Reason = "dead"
+	case p.Stamina < cost:
+		d.Reason = "stamina"
+	case m.Tick < p.NextAttackTick:
+		d.Reason = "cooldown"
+	}
+	if d.Reason != "" {
+		return
+	}
+	targets, viewTick, reason := m.attackView(p, q, d)
+	if reason != "" {
+		d.Reason = reason
 		return
 	}
 	p.AttackTick = m.Tick
-	p.nextAttackTick = m.Tick + cooldown
+	p.LastAttackSeq = q.Seq
+	p.AttackWeapon = p.Weapon
+	p.NextAttackTick = m.Tick + cooldown
 	p.Stamina -= cost
 	p.ShieldTick = 0
+	d.Outcome, d.Reason = "miss", "range"
 	if p.Weapon == Bow {
 		p.Arrows--
-		m.shoot(p)
+		m.shoot(p, targets, viewTick, d)
 		return
 	}
 	var target *Player
 	nearest := r.AttackRange
-	for _, other := range m.ordered() {
-		if p.ID == other.ID || other.Health <= 0 || m.Tick < other.ShieldTick || math.Abs(other.Y-p.Y) > 1.8 {
+	for _, other := range targets {
+		if p.ID == other.ID || other.Health <= 0 {
 			continue
 		}
 		dx, dz := other.X-p.X, other.Z-p.Z
-		d := math.Hypot(dx, dz)
-		if d > nearest || d < 0.001 {
+		distance := math.Hypot(dx, dz)
+		if distance > nearest || distance < 0.001 {
 			continue
 		}
-		if (-math.Sin(p.Yaw)*dx-math.Cos(p.Yaw)*dz)/d < math.Cos(50*math.Pi/180) {
+		if math.Abs(other.Y-p.Y) > 1.8 {
+			d.Reason = "height"
+			continue
+		}
+		if (-math.Sin(p.Yaw)*dx-math.Cos(p.Yaw)*dz)/distance < math.Cos(50*math.Pi/180) {
+			d.Reason = "direction"
 			continue
 		}
 		if !m.World.Clear(p.X, p.Z, other.X, other.Z) {
+			d.Reason = "wall"
 			continue
 		}
-		target, nearest = other, d
+		if viewTick < float64(other.ShieldTick) {
+			d.Reason = "shield"
+			continue
+		}
+		target, nearest = other, distance
 	}
 	if target == nil {
 		return
 	}
-	m.damage(p, target, r.AttackDamage)
+	m.damage(p, target, r.AttackDamage, d)
 }
 
-func (m *Match) damage(p, target *Player, damage float64) {
+func (m *Match) damage(p, historical *Player, damage float64, diagnostic *CombatDiagnostic) {
+	target := m.Players[historical.ID]
+	if target == nil || target.Health <= 0 || target.Life != historical.Life {
+		diagnostic.Reason = "life_changed"
+		return
+	}
 	r := m.World.Rules
-	dx, dz := p.X-target.X, p.Z-target.Z
+	diagnostic.Outcome, diagnostic.Reason = "hit", "hit"
+	dx, dz := p.X-historical.X, p.Z-historical.Z
 	distance := math.Hypot(dx, dz)
-	if target.Blocking && distance > 0 && (-math.Sin(target.Yaw)*dx-math.Cos(target.Yaw)*dz)/distance > 0.3 {
+	if historical.Blocking && distance > 0 && (-math.Sin(historical.Yaw)*dx-math.Cos(historical.Yaw)*dz)/distance > 0.3 {
+		diagnostic.Reason = "block"
 		damage = math.Round(damage * 0.25)
 		target.Stamina = math.Max(0, target.Stamina-8)
 	}
 	target.Health = math.Max(0, target.Health-damage)
 	m.emit("hit", p.ID, target.ID, damage)
+	m.events[len(m.events)-1].Seq = p.LastAttackSeq
+	m.events[len(m.events)-1].Life = p.Life
 	if target.Health == 0 {
 		p.Kills++
 		target.Deaths++
@@ -248,11 +318,18 @@ func (m *Match) Step() {
 		m.Phase = "playing"
 		m.EndTick = m.Tick + uint64(r.RoundSeconds*r.TickRate)
 	}
-	attacks := make([]*Player, 0, len(m.Players))
+	type pendingAttack struct {
+		player *Player
+		input  queuedInput
+	}
+	attacks := make([]pendingAttack, 0, len(m.Players))
 	for _, p := range m.ordered() {
 		input := Input{Yaw: p.Yaw, Pitch: p.Pitch, Weapon: p.Weapon}
+		queued := queuedInput{receivedTick: float64(m.Tick)}
+		p.coalesceInputs(m.Tick)
 		if len(p.queue) > 0 {
-			input = p.queue[0]
+			queued = p.queue[0]
+			input = queued.Input
 			p.queue = p.queue[1:]
 			p.Ack = input.Seq
 		}
@@ -271,11 +348,11 @@ func (m *Match) Step() {
 		input.Weapon = p.Weapon
 		Move(m.World, &p.Motion, input)
 		if input.Attack {
-			attacks = append(attacks, p)
+			attacks = append(attacks, pendingAttack{p, queued})
 		}
 	}
-	for _, p := range attacks {
-		m.attack(p)
+	for _, attack := range attacks {
+		m.attackInput(attack.player, attack.input)
 	}
 	if m.Phase == "playing" {
 		finished := m.Tick >= m.EndTick
@@ -299,5 +376,6 @@ func (m *Match) Snapshot() Snapshot {
 		copy.queue = nil
 		s.Players = append(s.Players, copy)
 	}
+	m.remember(s)
 	return s
 }

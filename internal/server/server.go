@@ -20,7 +20,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 // BuildRevision is set by the release build to identify the running artifact.
 var BuildRevision = "dev"
@@ -133,6 +133,7 @@ type envelope struct {
 	Token      string     `json:"token,omitempty"`
 	Input      game.Input `json:"input,omitempty"`
 	Time       float64    `json:"time,omitempty"`
+	Probe      string     `json:"probe,omitempty"`
 }
 
 func decode(data []byte) (envelope, error) {
@@ -208,20 +209,40 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer room.submit(operation{kind: "leave", peer: p})
+	probe := &latencyProbe{}
 	go func() {
 		defer cancel()
+		probeTimer := time.NewTicker(time.Second)
+		defer probeTimer.Stop()
+		first := true
+		sendProbe := func() error {
+			payload, _ := json.Marshal(map[string]string{"type": "probe", "probe": probe.issue(time.Now())})
+			writeCtx, done := context.WithTimeout(ctx, 3*time.Second)
+			defer done()
+			return conn.Write(writeCtx, websocket.MessageText, payload)
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-p.done:
 				return
+			case <-probeTimer.C:
+				if !first && sendProbe() != nil {
+					return
+				}
 			case payload := <-p.out:
 				writeCtx, done := context.WithTimeout(ctx, 3*time.Second)
 				err := conn.Write(writeCtx, websocket.MessageText, payload)
 				done()
 				if err != nil {
 					return
+				}
+				if first {
+					first = false
+					if sendProbe() != nil {
+						return
+					}
 				}
 			}
 		}
@@ -230,6 +251,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	for {
 		readCtx, done := context.WithTimeout(ctx, 15*time.Second)
 		_, data, err := conn.Read(readCtx)
+		receivedAt := time.Now()
 		done()
 		if err != nil {
 			return
@@ -254,8 +276,14 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 				_ = conn.Close(websocket.StatusPolicyViolation, "Некорректное управление.")
 				return
 			}
-			if !room.submit(operation{kind: "input", peer: p, input: e.Input}) {
+			if !room.submit(operation{kind: "input", peer: p, input: e.Input, receivedAt: receivedAt}) {
 				return
+			}
+		case "probe_ack":
+			if rtt, jitter, ok := probe.acknowledge(e.Probe, receivedAt); ok {
+				if !room.submit(operation{kind: "latency", peer: p, rtt: rtt, jitter: jitter}) {
+					return
+				}
 			}
 		case "ping":
 			p.send(map[string]any{"type": "pong", "time": e.Time})

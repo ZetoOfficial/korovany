@@ -44,6 +44,7 @@ jobs:
           curl --retry 20 --retry-connrefused --retry-delay 1 --retry-max-time 30 -fsS "${ASTRA_URL}api/health"
           npm run test:campaign
           npm run test:multiplayer
+          npm run test:latency
       - name: Package tested release
         if: matrix.base == '/korovany/'
         run: tar -czf korovany-linux-amd64.tar.gz bin/korovany dist

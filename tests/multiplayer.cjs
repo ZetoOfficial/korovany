@@ -16,7 +16,11 @@ async function until(condition, label, timeout = 10000) {
 (async () => {
   const browser = await chromium.launch({
     headless: true,
-    args: ["--enable-unsafe-swiftshader"],
+    channel: "chromium",
+    args:
+      process.platform === "darwin"
+        ? ["--use-angle=metal"]
+        : ["--enable-unsafe-swiftshader"],
   });
   try {
     const errors = [];
@@ -78,6 +82,11 @@ async function until(condition, label, timeout = 10000) {
       "round starts for both clients",
     );
     assert.equal(await a.page.locator("#player-count").textContent(), "2 / 8");
+    for (const client of [a, b]) {
+      await client.page.locator("#menu-button").click();
+      await client.page.locator("#low-quality").check();
+      await client.page.locator("#resume").click();
+    }
     console.log("PASS two browsers join a room and start the same match");
 
     // Aim through real mouse input using the public positions. Spawn headings
@@ -116,7 +125,13 @@ async function until(condition, label, timeout = 10000) {
         b.wire.state.players.find((p) => p.id === b.wire.id).health === 66 &&
         a.wire.state.players.find((p) => p.id === a.wire.id).arrows === 19,
       "ranged hit reaches the other browser",
-    );
+    ).catch((error) => {
+      console.error(
+        "Ranged combat state:",
+        JSON.stringify(a.wire.state.players),
+      );
+      throw error;
+    });
     assert.equal(
       a.wire.state.players.find((p) => p.id === a.wire.id).arrows,
       19,
