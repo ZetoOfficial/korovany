@@ -127,7 +127,7 @@ func (m *Match) stepSwords() {
 				if other.ID == p.ID || other.Health <= 0 {
 					continue
 				}
-				if hit, ok := bodyHit(other, viewTick, r, base, direction, nearest, combat.BladeRadius); ok && (hit.Distance < nearest || reason == "") {
+				if hit, ok := combatHit(other, viewTick, r, base, direction, nearest, combat.BladeRadius); ok && (hit.Distance < nearest || reason == "") {
 					nearest, reason, target, contact = hit.Distance, "player", other, hit
 				}
 			}

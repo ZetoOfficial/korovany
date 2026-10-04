@@ -238,15 +238,15 @@ func TestInjuryProtectionHistoryAndReconnect(t *testing.T) {
 	m, a, b := readyMatch(t)
 	b.Blocking = true
 	m.damageFrom(a, b, 35, &CombatDiagnostic{}, Vec3{}, 1, a.Life, BodyHit{Part: "leftArm"})
-	if b.Health != 96 || b.LimbDamage[0] != 9 || m.events[0].Severed || !m.events[0].Blocked {
-		t.Fatal("block did not protect the limb")
+	if b.Health != 86 || b.LimbDamage[0] != 35 || m.events[0].Severed || m.events[0].Blocked {
+		t.Fatal("blocking made an exposed limb invulnerable")
 	}
 	saved := m.Snapshot()
 	b.Blocking = false
 	for n := 0; n < 2; n++ {
 		m.damageFrom(a, b, 35, &CombatDiagnostic{}, Vec3{}, 1, a.Life, BodyHit{Part: "leftArm"})
 	}
-	if saved.Players[1].LimbDamage[0] != 9 {
+	if saved.Players[1].LimbDamage[0] != 35 {
 		t.Fatal("later injury mutated historical snapshot")
 	}
 	health, damage := b.Health, b.LimbDamage

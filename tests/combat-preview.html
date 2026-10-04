@@ -32,7 +32,7 @@
       button {
         font: inherit;
       }
-      input {
+      input[type="range"] {
         width: 100%;
       }
       button {
@@ -74,8 +74,12 @@
           <option value="arm">Без левой руки</option>
           <option value="leg">Без левой ноги</option>
           <option value="bow">Натянутый лук</option>
+          <option value="shield">Щит спереди</option>
+          <option value="shield-rear">Щит · вид со спины</option>
+          <option value="shield-side">Щит · вид сбоку</option>
         </select></label
       >
+      <label><input id="local-shield" type="checkbox" />Поднять свой щит</label>
       <button id="play">Проиграть взмах</button>
     </aside>
     <script type="module" src="./combat-preview.ts"></script>

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import cases from "../../internal/game/data/movement_cases.json";
+import { shieldActive } from "../combat.ts";
 import {
   AttackFeedback,
   move,
@@ -27,6 +28,26 @@ const input = (fields: Partial<Input> = {}): Input => ({
   attack: false,
   block: false,
   ...fields,
+});
+
+test("local shield returns immediately after a predicted swing despite remote interpolation delay", () => {
+  const prediction = new Prediction();
+  prediction.reset(player(), 200);
+  prediction.advance(input({ attack: true, block: true }), true);
+  assert.equal(shieldActive(prediction.player!, prediction.currentTick), false);
+  for (let seq = 2; seq <= rules.attackTicks; seq++) {
+    prediction.advance(input({ seq, block: true }), true);
+    assert.equal(
+      shieldActive(prediction.player!, prediction.currentTick),
+      false,
+    );
+  }
+  prediction.advance(input({ seq: rules.attackTicks + 1, block: true }), true);
+  assert.equal(shieldActive(prediction.player!, prediction.currentTick), true);
+  assert.equal(
+    shieldActive(prediction.player!, prediction.currentTick - 6),
+    false,
+  );
 });
 
 test("attack prediction reconciles resources without spending them twice", () => {

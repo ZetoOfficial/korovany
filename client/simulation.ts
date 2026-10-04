@@ -92,6 +92,10 @@ export class Prediction {
   pending: Input[] = [];
   private tick = 0;
 
+  get currentTick() {
+    return this.tick;
+  }
+
   reset(player: Player, tick = 0) {
     this.player = { ...player };
     this.pending = [];

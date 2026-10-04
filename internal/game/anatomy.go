@@ -22,6 +22,7 @@ type BodyPart struct {
 type CombatRules struct {
 	ArmHealth, LegHealth, WindupTicks, StrikeTicks, BladeRadius float64
 	BladeBase, BladeTip                                         [3]float64
+	Shield                                                      struct{ Center, Size [3]float64 }
 	Swing                                                       []struct {
 		Time     float64
 		Rotation [3]float64
@@ -116,6 +117,28 @@ type BodyHit struct {
 	Part     string
 	Distance float64
 	Point    Vec3
+}
+
+func shieldActive(p *Player, tick float64, r Rules) bool {
+	return p.Blocking && p.Weapon == Sword && p.Health > 0 && !p.limbMissing(1) && !swordActive(p, tick, r)
+}
+
+// The shield is a solid, upright box in front of the player. Whichever surface
+// the weapon reaches first wins, so a hit around the shield still damages flesh.
+func combatHit(p *Player, tick float64, r Rules, origin, direction Vec3, limit, padding float64) (BodyHit, bool) {
+	result, found := bodyHit(p, tick, r, origin, direction, limit, padding)
+	if !shieldActive(p, tick, r) {
+		return result, found
+	}
+	yaw := Vec3{Y: bodyYaw(p, tick, r)}
+	o := rotate(sub(origin, Vec3{p.X, p.Y, p.Z}), yaw, true)
+	d := rotate(direction, yaw, true)
+	center := vector(combat.Shield.Center)
+	half := add(scale(vector(combat.Shield.Size), .5), Vec3{padding, padding, padding})
+	if distance, hit := rayBox(o, d, sub(center, half), add(center, half), result.Distance); hit && (!found || distance < result.Distance) {
+		return BodyHit{"shield", distance, add(origin, scale(direction, distance))}, true
+	}
+	return result, found
 }
 
 // Intersect each animated oriented box, leaving the gaps between limbs empty.

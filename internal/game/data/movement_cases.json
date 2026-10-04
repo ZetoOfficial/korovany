@@ -1,5 +1,20 @@
 [
   {
+    "name": "raised shield prevents sprinting and regenerates block stamina",
+    "start": { "x": 0, "z": 10, "stamina": 50 },
+    "steps": [{ "count": 60, "input": { "forward": 1, "sprint": true, "block": true, "weapon": 1 } }],
+    "expected": { "x": 0, "z": 4.8, "y": 0, "stamina": 54 }
+  },
+  {
+    "name": "releasing shield allows sprinting again",
+    "start": { "x": 0, "z": 15, "stamina": 50 },
+    "steps": [
+      { "count": 30, "input": { "forward": 1, "sprint": true, "block": true, "weapon": 1 } },
+      { "count": 30, "input": { "forward": 1, "sprint": true, "weapon": 1 } }
+    ],
+    "expected": { "x": 0, "z": 7.9, "y": 0, "stamina": 46 }
+  },
+  {
     "name": "walking uses elapsed server ticks",
     "start": { "x": 0, "z": 10, "stamina": 100 },
     "steps": [{ "count": 60, "input": { "forward": 1 } }],

@@ -16,8 +16,10 @@ import {
   partRotation,
   swordRotation,
   bodyYaw,
+  shieldActive,
 } from "../combat.ts";
 import { createSword } from "./sword.ts";
+import { createShield } from "./shield.ts";
 import { Impacts } from "./impacts.ts";
 import { BowTrajectory } from "./trajectory.ts";
 
@@ -33,6 +35,7 @@ export class ArenaView {
   private camera = new THREE.PerspectiveCamera(70, 1, 0.08, 260);
   private avatars = new Map<string, Avatar>();
   private weapon = new THREE.Group();
+  private blockShield = new THREE.Group();
   private bow = createBow();
   private trajectory = new BowTrajectory();
   private shotStart = -10;
@@ -213,6 +216,10 @@ export class ArenaView {
     this.camera.rotation.order = "YXZ";
     this.scene.add(this.camera, this.impacts.group);
     this.scene.add(this.trajectory.group);
+    this.blockShield.add(createShield());
+    this.blockShield.children[0].visible = true;
+    this.blockShield.visible = false;
+    this.scene.add(this.blockShield);
     this.camera.add(this.weapon);
     this.weapon.position.set(0.34, 0, -0.45);
     this.weapon.scale.setScalar(0.75);
@@ -309,6 +316,7 @@ export class ArenaView {
     dt: number,
     now: number,
     aiming: boolean,
+    localTick = tick,
   ) {
     const flying = new Set(projectiles.map((arrow) => arrow.id));
     for (const [key, mesh] of this.arrows) {
@@ -373,6 +381,7 @@ export class ArenaView {
       }
       avatar.sword.visible =
         player.weapon === 1 && !player.dummy && !limbMissing(player, 1);
+      avatar.blockShield.visible = shieldActive(player, tick);
       avatar.bow.visible = player.weapon === 2 && canBow(player);
       if (avatar.bow.visible)
         setBowDraw(
@@ -398,6 +407,11 @@ export class ArenaView {
       this.lookReady = true;
       this.localLife = local.life;
       this.camera.position.copy(this.smoothPosition);
+      // Local prediction runs ahead of the interpolated remote-player timeline.
+      this.blockShield.visible = shieldActive(local, localTick);
+      this.blockShield.position.copy(this.smoothPosition);
+      this.blockShield.position.y -= 1.8;
+      this.blockShield.rotation.y = yaw;
       const recoil = Math.max(0, 1 - (now - this.recoilStart) * 5);
       this.camera.rotation.set(
         pitch + Math.sin(recoil * Math.PI) * 0.035,
@@ -405,7 +419,10 @@ export class ArenaView {
         recoil * 0.025,
       );
       this.weapon.visible =
-        local.health > 0 && local.weapon === 1 && !limbMissing(local, 1);
+        local.health > 0 &&
+        local.weapon === 1 &&
+        !limbMissing(local, 1) &&
+        !this.blockShield.visible;
       this.bow.visible =
         local.health > 0 && local.weapon === 2 && canBow(local);
       this.bow.position.z =
@@ -431,6 +448,7 @@ export class ArenaView {
     } else {
       this.lookReady = false;
       this.weapon.visible = false;
+      this.blockShield.visible = false;
       this.bow.visible = false;
       this.camera.position.set(Math.sin(now * 0.035) * 14, 15, 25);
       this.camera.lookAt(0, 0, 0);

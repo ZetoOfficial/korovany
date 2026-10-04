@@ -159,13 +159,15 @@ function receive(next: Snapshot) {
     if (event.type === "hit") {
       view.impact(event, self, performance.now() / 1000);
       if (event.actor === self && event.part) {
-        el("hit-detail").textContent =
-          `${partNames[event.part]} · −${event.damage}${event.blocked ? " · блок" : event.severed ? " · потеря конечности" : ""}`;
+        el("hit-detail").textContent = event.blocked
+          ? "Щит · удар заблокирован"
+          : `${partNames[event.part]} · −${event.damage}${event.severed ? " · потеря конечности" : ""}`;
         el("hit-detail").classList.toggle("critical", event.part === "head");
         el("hit-detail").dataset.until = String(performance.now() + 1300);
       }
       if (event.actor === self) hitUntil = performance.now() + 170;
-      if (event.target === self) damageUntil = performance.now() + 300;
+      if (event.target === self && !event.blocked)
+        damageUntil = performance.now() + 300;
     }
     if (event.type === "kill") {
       const actor =
@@ -335,7 +337,7 @@ function updateHUD(now: number) {
   el("weapon-number").textContent = bow ? "02" : "01";
   el("weapon-hint").textContent = bow
     ? "Зажми ЛКМ / E · отпусти — выстрел · ПКМ / Q — отмена"
-    : "ЛКМ / E · удар · ПКМ / Q · блок";
+    : "ЛКМ / E · удар · ПКМ / Q · щит";
   el("ammo").textContent =
     `Стрелы: ${player.arrows} / ${rules.arrows}${bow && player.arrows === 0 ? " · возьми клинок: 1" : ""}`;
   const injuries = combat.parts.filter(
@@ -466,6 +468,7 @@ function frame(now: number) {
     elapsed,
     now / 1000,
     controls.enabled && snapshot?.phase === "playing",
+    prediction.currentTick,
   );
   const draw = prediction.player?.bowDrawTicks ?? 0;
   el("bow-charge").hidden =

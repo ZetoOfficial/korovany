@@ -125,7 +125,7 @@ func (m *Match) stepProjectiles() {
 			if other.ID == arrow.Actor || other.Health <= 0 {
 				continue
 			}
-			if hit, ok := bodyHit(other, float64(m.Tick), r, start, direction, nearest, 0); ok && (hit.Distance < nearest || reason == "") {
+			if hit, ok := combatHit(other, float64(m.Tick), r, start, direction, nearest, 0); ok && (hit.Distance < nearest || reason == "") {
 				target, nearest, reason, contact = other, hit.Distance, "player", hit
 			}
 		}
@@ -141,7 +141,7 @@ func (m *Match) stepProjectiles() {
 			if m.Tick < target.ShieldTick {
 				arrow.diagnostic.Reason = "shield"
 			} else {
-				// Blocking faces the incoming arrow, even if its shooter has moved.
+				// Knockback follows the incoming arrow, even if its shooter has moved.
 				source := Vec3{target.X - direction.X, target.Y, target.Z - direction.Z}
 				m.damageFrom(owner, target, arrow.damage, arrow.diagnostic, source, arrow.Seq, arrow.Life, contact)
 			}

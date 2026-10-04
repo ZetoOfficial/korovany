@@ -51,7 +51,7 @@ export interface Player extends Motion {
     seq: number;
     outcome: "rejected" | "miss" | "hit" | "flying" | "swing";
     reason: string;
-    part?: import("./combat.ts").BodyPart;
+    part?: import("./combat.ts").HitPart;
     commandAgeMs: number;
     queueMs: number;
     rewindMs: number;
@@ -85,7 +85,7 @@ export interface GameEvent {
   actor: string;
   target?: string;
   damage?: number;
-  part?: import("./combat.ts").BodyPart;
+  part?: import("./combat.ts").HitPart;
   severed?: boolean;
   blocked?: boolean;
   seq?: number;

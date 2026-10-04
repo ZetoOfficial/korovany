@@ -198,7 +198,7 @@ func TestBowDefenseAtImpactAndFirstTarget(t *testing.T) {
 					if kind == "rear-block" {
 						yaw = 0
 					} else {
-						want = 91
+						want = 100
 					}
 					m.Input(b.ID, Input{Seq: b.lastSeq + 1, Weapon: Sword, Block: true, Yaw: yaw})
 				}

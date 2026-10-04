@@ -68,14 +68,14 @@ func TestAttackAndBlockAreAuthoritative(t *testing.T) {
 	m.Input(b.ID, Input{Seq: 1, Block: true, Yaw: math.Pi})
 	m.Step()
 	resolveSword(t, m, a)
-	if b.Health != 91 {
-		t.Fatalf("front block should reduce damage, health=%v", b.Health)
+	if b.Health != 100 {
+		t.Fatalf("front shield should prevent damage, health=%v", b.Health)
 	}
 	for n := uint64(2); n < 10; n++ {
 		m.Input(a.ID, Input{Seq: n, Attack: true})
 		m.Step()
 	}
-	if b.Health != 91 {
+	if b.Health != 100 {
 		t.Fatal("attack cooldown was bypassed")
 	}
 	// Blocking the wrong direction does not protect the defender.
@@ -86,7 +86,7 @@ func TestAttackAndBlockAreAuthoritative(t *testing.T) {
 	m.Input(b.ID, Input{Seq: 2, Block: true, Yaw: 0})
 	m.Step()
 	resolveSword(t, m, a)
-	if b.Health != 56 {
+	if b.Health != 65 {
 		t.Fatalf("rear hit should do full damage: %v", b.Health)
 	}
 }

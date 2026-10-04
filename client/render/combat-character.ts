@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { combat } from "../combat.ts";
 import { createSword } from "./sword.ts";
+import { createShield } from "./shield.ts";
 import { box, shape, coneGeometry } from "./primitives.ts";
 
 import { factionColors } from "./characters.ts";
@@ -59,5 +60,7 @@ export function createCombatHumanoid(faction: string, commander = false) {
   }
   if (commander)
     shape(g, coneGeometry, 0, 2.28, 0, 0.16, 0.35, 0.16, "#d7b264");
-  return { group: g, parts, sword };
+  const blockShield = createShield();
+  g.add(blockShield);
+  return { group: g, parts, sword, blockShield };
 }

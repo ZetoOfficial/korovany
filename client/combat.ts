@@ -4,7 +4,9 @@ import { rules, type Motion, type Player } from "./protocol.ts";
 export const combat = data;
 export type BodyPart =
   "head" | "torso" | "leftArm" | "rightArm" | "leftLeg" | "rightLeg";
-export const partNames: Record<BodyPart, string> = {
+export type HitPart = BodyPart | "shield";
+export const partNames: Record<HitPart, string> = {
+  shield: "Щит",
   head: "Голова",
   torso: "Корпус",
   leftArm: "Левая рука",
@@ -25,6 +27,12 @@ export const swordActive = (p: Player, tick: number) =>
   tick - p.attackTick < rules.attackTicks;
 export const bodyYaw = (p: Player, tick: number) =>
   swordActive(p, tick) ? (p.attackYaw ?? p.yaw) : p.yaw;
+export const shieldActive = (p: Player, tick: number) =>
+  p.blocking &&
+  p.weapon === 1 &&
+  p.health > 0 &&
+  !limbMissing(p, 1) &&
+  !swordActive(p, tick);
 
 export function swordRotation(age: number): [number, number, number] {
   const t = Math.max(0, Math.min(1, age / rules.attackTicks));

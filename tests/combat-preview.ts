@@ -6,6 +6,7 @@ const view = new ArenaView(
 );
 const age = document.querySelector<HTMLInputElement>("#age")!;
 const injury = document.querySelector<HTMLSelectElement>("#injury")!;
+const localShield = document.querySelector<HTMLInputElement>("#local-shield")!;
 const player: Player = {
   id: "self",
   name: "Путник",
@@ -53,6 +54,8 @@ function frame(now: number) {
     if (Number(age.value) >= 32) playing = false;
   }
   const t = Number(age.value);
+  player.blocking = localShield.checked;
+  player.attackTick = localShield.checked ? 0 : 100;
   document.querySelector("#phase")!.textContent =
     t < combat.windupTicks
       ? "Замах · урона ещё нет"
@@ -77,6 +80,9 @@ function frame(now: number) {
     target.weapon = 2;
     target.bowDrawTicks = 60;
   }
+  target.blocking = injury.value.startsWith("shield");
+  if (injury.value === "shield-rear") target.yaw = 0;
+  if (injury.value === "shield-side") target.yaw = Math.PI / 2;
   view.attack(1, 0);
   view.render(
     player,
@@ -92,15 +98,23 @@ function frame(now: number) {
   );
   if (playing && !fired && t >= 14) {
     fired = true;
+    const blocked = injury.value === "shield";
     view.impact(
       {
         id: 1,
         type: "hit",
         actor: "self",
         target: "target",
-        part: "torso",
-        damage: 35,
-        to: { x: 0, y: 1.3, z: -2.3 },
+        part: blocked ? "shield" : "torso",
+        damage: blocked ? 0 : 35,
+        blocked,
+        to: {
+          x: 0,
+          y: 1.3,
+          z: blocked
+            ? target.z - combat.shield.center[2] + combat.shield.size[2] / 2
+            : -2.3,
+        },
       },
       "self",
       t / 60,

@@ -285,6 +285,14 @@ func (m *Match) damageFrom(p, historical *Player, damage float64, diagnostic *Co
 		diagnostic.Reason = "life_changed"
 		return
 	}
+	if hit.Part == "shield" {
+		diagnostic.Outcome, diagnostic.Reason, diagnostic.Part = "hit", "block", "shield"
+		target.Stamina = math.Max(0, target.Stamina-8)
+		m.emit("hit", p.ID, target.ID, 0)
+		event := &m.events[len(m.events)-1]
+		event.Seq, event.Life, event.Part, event.To, event.Blocked = seq, life, hit.Part, &hit.Point, true
+		return
+	}
 	for _, part := range combat.Parts {
 		if part.ID == hit.Part && part.Limb >= 0 && target.limbMissing(part.Limb) {
 			diagnostic.Outcome, diagnostic.Reason = "miss", "limb_missing"
@@ -295,12 +303,6 @@ func (m *Match) damageFrom(p, historical *Player, damage float64, diagnostic *Co
 	diagnostic.Outcome, diagnostic.Reason = "hit", "hit"
 	dx, dz := source.X-historical.X, source.Z-historical.Z
 	distance := math.Hypot(dx, dz)
-	blocked := historical.Blocking && !target.limbMissing(1) && distance > 0 && (-math.Sin(historical.Yaw)*dx-math.Cos(historical.Yaw)*dz)/distance > 0.3
-	if blocked {
-		diagnostic.Reason = "block"
-		damage = math.Round(damage * 0.25)
-		target.Stamina = math.Max(0, target.Stamina-8)
-	}
 	severed := false
 	for _, part := range combat.Parts {
 		if part.ID != hit.Part {
@@ -337,7 +339,6 @@ func (m *Match) damageFrom(p, historical *Player, damage float64, diagnostic *Co
 	m.events[len(m.events)-1].Part = hit.Part
 	m.events[len(m.events)-1].To = &hit.Point
 	m.events[len(m.events)-1].Severed = severed
-	m.events[len(m.events)-1].Blocked = blocked
 	if target.Health == 0 {
 		p.Kills++
 		target.Deaths++

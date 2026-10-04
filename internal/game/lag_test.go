@@ -86,7 +86,7 @@ func TestHistoricalDefenseAndLifecycle(t *testing.T) {
 					switch scenario {
 					case "block":
 						p.Blocking, p.Yaw = true, math.Pi
-						want = 91
+						want = 100
 					case "rear-block":
 						p.Blocking, p.Yaw = true, 0
 						want = 65
@@ -231,7 +231,7 @@ func TestHistoryInterpolatesActualSnapshotPair(t *testing.T) {
 	m.Input(a.ID, input)
 	m.Step()
 	resolveSword(t, m, a)
-	if b.Health != 82 || a.LastCombat.Part != "head" {
+	if b.Health != 100 || a.LastCombat.Part != "shield" {
 		t.Fatalf("historical block failed: %+v", a.LastCombat)
 	}
 }
