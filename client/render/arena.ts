@@ -22,6 +22,12 @@ import { createSword } from "./sword.ts";
 import { createShield } from "./shield.ts";
 import { Impacts } from "./impacts.ts";
 import { BowTrajectory } from "./trajectory.ts";
+import {
+  SeppukuActor,
+  ceremonyCamera,
+  ease,
+  seppukuImpact,
+} from "./seppuku.ts";
 
 type Avatar = ReturnType<typeof createHumanoid> & {
   label: THREE.Sprite;
@@ -46,6 +52,10 @@ export class ArenaView {
   private lookReady = false;
   private smoothPosition = new THREE.Vector3();
   private localLife = 0;
+  private ceremonies = new Map<string, SeppukuActor>();
+  private ceremonyTick = -1;
+  private ceremonyStart = new THREE.Vector3();
+  private motion = matchMedia("(prefers-reduced-motion: reduce)");
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -248,6 +258,9 @@ export class ArenaView {
   resetAttack() {
     this.swingStart = this.shotStart = this.recoilStart = -10;
     this.impacts.clear();
+    this.ceremonyTick = -1;
+    for (const ceremony of this.ceremonies.values()) ceremony.dispose();
+    this.ceremonies.clear();
   }
   impact(event: GameEvent, self: string, now: number) {
     const avatar = event.target ? this.avatars.get(event.target) : undefined;
@@ -317,7 +330,12 @@ export class ArenaView {
     now: number,
     aiming: boolean,
     localTick = tick,
+    stateTick = localTick,
   ) {
+    if (local?.forfeited && this.ceremonyTick !== local.seppukuTick) {
+      this.ceremonyTick = local.seppukuTick ?? 0;
+      this.ceremonyStart.copy(this.camera.position);
+    }
     const flying = new Set(projectiles.map((arrow) => arrow.id));
     for (const [key, mesh] of this.arrows) {
       if (!local || !flying.has(key)) {
@@ -362,6 +380,8 @@ export class ArenaView {
     for (const player of remotes) {
       if (player.id === id) continue;
       const avatar = this.avatars.get(player.id) ?? this.avatar(player);
+      avatar.group.visible = !player.forfeited;
+      if (player.forfeited) continue;
       avatar.group.position.set(
         player.x,
         player.y + (player.health <= 0 ? 0.3 : 0),
@@ -455,6 +475,59 @@ export class ArenaView {
     }
     this.impacts.update(dt);
     this.trajectory.update(local, yaw, pitch, this.camera, aiming);
+    const participants = local
+      ? [local, ...remotes.filter((p) => p.id !== id)]
+      : [];
+    const surrendered = new Set(
+      participants.filter((p) => p.forfeited).map((p) => p.id),
+    );
+    for (const [key, ceremony] of this.ceremonies) {
+      if (!surrendered.has(key)) {
+        ceremony.dispose();
+        this.ceremonies.delete(key);
+      }
+    }
+    for (const player of participants) {
+      if (!player.forfeited) continue;
+      let ceremony = this.ceremonies.get(player.id);
+      if (!ceremony) {
+        ceremony = new SeppukuActor(player);
+        this.ceremonies.set(player.id, ceremony);
+        this.scene.add(ceremony.group);
+      }
+      const age = Math.max(
+        0,
+        (stateTick - (player.seppukuTick ?? 0)) / rules.tickRate,
+      );
+      ceremony.update(player, age, this.motion.matches);
+    }
+    let fov = 70,
+      exposure = 1.3;
+    if (local?.forfeited) {
+      const age = Math.max(
+        0,
+        (stateTick - (local.seppukuTick ?? 0)) / rules.tickRate,
+      );
+      const shot = ceremonyCamera(local, age, this.motion.matches);
+      this.camera.position.copy(shot.position);
+      if (!this.motion.matches && age < 0.8)
+        this.camera.position.lerp(this.ceremonyStart, 1 - ease(0, 0.8, age));
+      this.camera.lookAt(shot.target);
+      if (!this.motion.matches) {
+        const impact = Math.max(0, 1 - (age - seppukuImpact) / 0.45);
+        if (age > seppukuImpact)
+          this.camera.rotation.z +=
+            Math.sin((age - seppukuImpact) * 48) * impact * 0.022;
+      }
+      fov = this.motion.matches ? 54 : 70 - ease(0, 1.8, age) * 16;
+      exposure = 1.3 - ease(0, 1.8, age) * 0.42;
+      this.weapon.visible = this.bow.visible = this.blockShield.visible = false;
+    } else this.ceremonyTick = -1;
+    if (this.camera.fov !== fov) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.renderer.toneMappingExposure = exposure;
     this.renderer.render(this.scene, this.camera);
   }
 }

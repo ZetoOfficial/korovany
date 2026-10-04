@@ -43,6 +43,7 @@ type operation struct {
 	peer        *peer
 	name, token string
 	input       game.Input
+	life        uint64
 	receivedAt  time.Time
 	rtt, jitter float64
 	reply       chan error
@@ -137,6 +138,16 @@ func (r *room) run(remove func()) {
 				if peers[op.peer.id] == op.peer {
 					m.InputDelayed(op.peer.id, op.input, time.Since(op.receivedAt).Seconds())
 				}
+			case "seppuku":
+				if peers[op.peer.id] != op.peer {
+					continue
+				}
+				accepted := m.Seppuku(op.peer.id, op.life)
+				message := "Раунд сдан."
+				if !accepted {
+					message = "Сэппуку доступно только живому бойцу во время схватки."
+				}
+				op.peer.send(map[string]any{"type": "seppuku_result", "accepted": accepted, "message": message})
 			case "add_dummy", "remove_dummies":
 				if peers[op.peer.id] != op.peer {
 					continue

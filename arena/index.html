@@ -121,7 +121,7 @@
       </div>
       <footer class="game-footer">
         WASD движение <i>·</i> Shift бег <i>·</i> Пробел прыжок <i>·</i> Стрелки
-        обзор
+        обзор <i>·</i> Shift + K сэппуку
       </footer>
     </section>
     <div id="damage" aria-hidden="true"></div>
@@ -170,8 +170,56 @@
           </p>
           <p id="dummy-status" class="status" role="status"></p>
         </section>
+        <section class="surrender" aria-label="Сдать раунд">
+          <button
+            id="seppuku"
+            class="secondary danger-button"
+            aria-expanded="false"
+            aria-controls="seppuku-confirm"
+            aria-keyshortcuts="Shift+K"
+            disabled
+          >
+            Сэппуку · сдать раунд · Shift + K
+          </button>
+          <p id="seppuku-hint">Доступно живому бойцу во время схватки.</p>
+          <div id="seppuku-confirm" hidden>
+            <strong>Последний взмах</strong>
+            <p>
+              Ты автоматически проиграешь этот раунд. Возрождение — только в
+              следующей схватке.
+            </p>
+            <div class="surrender-actions">
+              <button id="seppuku-cancel" class="secondary">
+                Продолжить бой
+              </button>
+              <button id="seppuku-accept" class="secondary danger-button">
+                Совершить сэппуку
+              </button>
+            </div>
+          </div>
+          <p id="seppuku-status" role="status"></p>
+          <label class="quality"
+            ><input id="seppuku-sound" type="checkbox" checked /> Звук
+            сэппуку</label
+          >
+        </section>
         <button id="leave" class="secondary">Покинуть комнату</button>
       </section>
+    </div>
+    <div id="seppuku-cinematic" hidden role="status" aria-live="polite">
+      <div class="ceremony-bar top"></div>
+      <div class="ceremony-bar bottom"></div>
+      <div class="ceremony-caption">ПОСЛЕДНИЙ ВЗМАХ</div>
+      <div class="ceremony-flash"></div>
+      <div class="ceremony-cut"></div>
+      <div class="ceremony-result">
+        <div class="ceremony-seal"><span>×</span></div>
+        <small>СЭППУКУ</small>
+        <h2>ПОРАЖЕНИЕ</h2>
+        <div class="ceremony-rule"></div>
+        <p>Клинок опущен. Эта схватка окончена.</p>
+      </div>
+      <div class="ceremony-footer">ВОЗВРАЩЕНИЕ В СЛЕДУЮЩЕМ РАУНДЕ</div>
     </div>
     <noscript>Для игры включите JavaScript.</noscript>
   </body>

@@ -2,7 +2,7 @@ import arena from "../internal/game/data/arena.json";
 
 export const world = arena;
 export const rules = arena.rules;
-export const protocolVersion = 6;
+export const protocolVersion = 7;
 export const stepSeconds = 1 / rules.tickRate;
 export const interpolationTicks = rules.tickRate * 0.1;
 
@@ -77,11 +77,13 @@ export interface Player extends Motion {
   shieldTick: number;
   connected: boolean;
   dummy?: boolean;
+  forfeited?: boolean;
+  seppukuTick?: number;
 }
 
 export interface GameEvent {
   id: number;
-  type: "hit" | "kill" | "end" | "arrow";
+  type: "hit" | "kill" | "end" | "arrow" | "seppuku";
   actor: string;
   target?: string;
   damage?: number;
@@ -129,5 +131,6 @@ export type ServerMessage =
   | Welcome
   | Snapshot
   | { type: "dummy_result"; message: string }
+  | { type: "seppuku_result"; accepted: boolean; message: string }
   | { type: "pong"; time: number }
   | { type: "probe"; probe: string };

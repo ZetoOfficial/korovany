@@ -33,6 +33,8 @@ type Player struct {
 	ShieldTick       uint64            `json:"shieldTick"`
 	Connected        bool              `json:"connected"`
 	Dummy            bool              `json:"dummy,omitempty"`
+	Forfeited        bool              `json:"forfeited,omitempty"`
+	SeppukuTick      uint64            `json:"seppukuTick,omitempty"`
 	AttackPitch      float64           `json:"attackPitch"`
 	AttackYaw        float64           `json:"attackYaw"`
 	swing            *swordSwing
@@ -131,6 +133,35 @@ func (m *Match) RemoveDummies() int {
 	return removed
 }
 
+// Surrender is a round result, not an ordinary death. Life binds the command
+// to the life in which the player confirmed it, including across reconnects.
+func (m *Match) Seppuku(id string, life uint64) bool {
+	p := m.Players[id]
+	if m.Phase != "playing" || p == nil || p.Dummy || !p.Connected || p.Health <= 0 || p.Forfeited || life != p.Life {
+		return false
+	}
+	p.Forfeited = true
+	p.SeppukuTick = m.Tick
+	p.Health = 0
+	p.Deaths++
+	p.RespawnTick, p.ShieldTick = 0, 0
+	p.Blocking = false
+	p.BowDrawTicks = 0
+	p.swing = nil
+	p.queue = nil
+	p.Ack = p.lastSeq
+	p.Y, p.VY, p.ImpulseX, p.ImpulseZ = 0, 0, 0, 0
+	remaining := m.projectiles[:0]
+	for _, arrow := range m.projectiles {
+		if arrow.Actor != id {
+			remaining = append(remaining, arrow)
+		}
+	}
+	m.projectiles = remaining
+	m.emit("seppuku", id, "", 0)
+	return true
+}
+
 func (m *Match) Disconnect(id string) {
 	if p := m.Players[id]; p != nil && !p.Dummy {
 		p.Connected = false
@@ -198,6 +229,8 @@ func (m *Match) respawn(p *Player) {
 	}
 	p.Motion = Motion{X: best.X, Z: best.Z, Yaw: best.Yaw, Stamina: 100}
 	p.Health = 100
+	p.Forfeited = false
+	p.SeppukuTick = 0
 	p.swing = nil
 	p.AttackPitch, p.AttackYaw = 0, 0
 	if p.Weapon != Bow {
@@ -397,7 +430,7 @@ func (m *Match) Step() {
 		}
 		if p.Health <= 0 {
 			p.BowDrawTicks = 0
-			if m.Tick >= p.RespawnTick && m.Phase != "finished" {
+			if !p.Forfeited && m.Tick >= p.RespawnTick && m.Phase != "finished" {
 				m.respawn(p)
 			}
 			continue
@@ -429,11 +462,18 @@ func (m *Match) Step() {
 		m.stepSwords()
 		m.stepProjectiles()
 		finished := m.Tick >= m.EndTick
+		contenders, forfeited := 0, false
 		for _, p := range m.Players {
+			if p.Forfeited {
+				forfeited = true
+				continue
+			}
+			contenders++
 			if p.Kills >= r.ScoreLimit {
 				finished = true
 			}
 		}
+		finished = finished || (forfeited && contenders <= 1)
 		if finished {
 			m.projectiles = nil
 			for _, p := range m.Players {

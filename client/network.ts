@@ -20,6 +20,7 @@ export interface NetworkEvents {
   failed(message: string): void;
   ping(milliseconds: number): void;
   dummyResult(message: string): void;
+  seppukuResult(accepted: boolean, message: string): void;
 }
 
 export class MatchConnection implements Transport {
@@ -88,6 +89,8 @@ export class MatchConnection implements Transport {
       } else if (message.type === "snapshot") this.events.snapshot(message);
       else if (message.type === "dummy_result")
         this.events.dummyResult(message.message);
+      else if (message.type === "seppuku_result")
+        this.events.seppukuResult(message.accepted, message.message);
       else if (message.type === "probe")
         socket.send(
           JSON.stringify({ type: "probe_ack", probe: message.probe }),
@@ -133,7 +136,15 @@ export class MatchConnection implements Transport {
     return this.sendMessage({ type: action });
   }
 
-  private sendMessage(message: { type: string; input?: Input }): boolean {
+  seppuku(life: number): boolean {
+    return this.sendMessage({ type: "seppuku", life });
+  }
+
+  private sendMessage(message: {
+    type: string;
+    input?: Input;
+    life?: number;
+  }): boolean {
     if (
       !this.ready ||
       !this.socket ||

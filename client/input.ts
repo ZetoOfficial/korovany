@@ -17,8 +17,31 @@ export class Controls {
   constructor(
     private canvas: HTMLCanvasElement,
     private onMenu: () => void,
+    private onSeppuku: () => void,
   ) {
     window.addEventListener("keydown", (e) => {
+      if (
+        e.code === "KeyK" &&
+        e.shiftKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey
+      ) {
+        const target = e.target;
+        if (
+          target instanceof HTMLElement &&
+          (target.isContentEditable ||
+            target.matches("input, textarea, select"))
+        )
+          return;
+        e.preventDefault();
+        if (!e.repeat) this.onSeppuku();
+        return;
+      }
+      if (e.code === "Escape" || e.code === "KeyP") {
+        if (!e.repeat) this.onMenu();
+        return;
+      }
       if (!this.enabled) return;
       if (
         [
@@ -31,10 +54,6 @@ export class Controls {
         ].includes(e.code)
       )
         e.preventDefault();
-      if (e.code === "Escape" || e.code === "KeyP") {
-        this.onMenu();
-        return;
-      }
       this.keys.add(e.code);
       if (e.code === "Digit1" || e.code === "Numpad1") this.weapon = 1;
       if (e.code === "Digit2" || e.code === "Numpad2") this.weapon = 2;

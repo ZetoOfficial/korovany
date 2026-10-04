@@ -1,0 +1,237 @@
+.surrender {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #c7867040;
+}
+.surrender > button {
+  width: 100%;
+}
+.surrender .danger-button {
+  color: #e9ad98;
+  border-color: #aa655d88;
+  background: #682f271f;
+}
+.surrender .danger-button:hover:not(:disabled) {
+  background: #873e393d;
+}
+.surrender button:disabled {
+  cursor: not-allowed;
+}
+.surrender p {
+  margin: 10px 0;
+}
+#seppuku-confirm {
+  padding: 14px;
+  background: #130f0f5c;
+  border-left: 2px solid #b77866;
+}
+#seppuku-confirm strong {
+  color: #f1cfbd;
+  font:
+    20px Georgia,
+    serif;
+}
+.surrender-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.surrender-actions button {
+  flex: 1;
+}
+#seppuku-status:empty {
+  display: none;
+}
+#players li.forfeited {
+  color: #c59080;
+}
+#players li.forfeited small {
+  color: #c59080;
+}
+body.seppuku-playing #hud {
+  opacity: 0;
+  pointer-events: none;
+}
+body.seppuku-playing #hud button {
+  pointer-events: none;
+}
+body.seppuku-playing #damage {
+  visibility: hidden;
+}
+#seppuku-cinematic {
+  --ceremony-in: 0;
+  --ceremony-out: 1;
+  --ceremony-title: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+  color: #e8d9c2;
+  opacity: var(--ceremony-out);
+  background: radial-gradient(
+    ellipse at 50% 47%,
+    transparent 12%,
+    #130b1166 68%,
+    #100b13e6 100%
+  );
+}
+.ceremony-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: clamp(54px, 11vh, 130px);
+  background: #0e0d10;
+}
+.ceremony-bar.top {
+  top: 0;
+  transform: scaleY(var(--ceremony-in));
+  transform-origin: top;
+}
+.ceremony-bar.bottom {
+  bottom: 0;
+  transform: scaleY(var(--ceremony-in));
+  transform-origin: bottom;
+}
+.ceremony-caption {
+  position: absolute;
+  top: 4.6vh;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font:
+    10px Arial,
+    sans-serif;
+  letter-spacing: 0.42em;
+  opacity: var(--ceremony-in);
+  color: #c2ad91;
+}
+.ceremony-caption::before,
+.ceremony-caption::after {
+  content: "";
+  display: inline-block;
+  vertical-align: middle;
+  width: 38px;
+  height: 1px;
+  background: #9c7965;
+  margin: 0 20px;
+}
+.ceremony-flash {
+  position: absolute;
+  inset: 0;
+  background: #f4dac0;
+  opacity: var(--ceremony-flash);
+}
+.ceremony-cut {
+  position: absolute;
+  top: 48%;
+  left: 8%;
+  width: 84%;
+  height: 2px;
+  transform: rotate(-13deg) scaleX(var(--ceremony-line));
+  transform-origin: left;
+  background: #fff0cc;
+  box-shadow:
+    0 0 16px 3px #eabd75,
+    0 0 50px 10px #ac5d4b;
+  opacity: var(--ceremony-line-fade);
+}
+.ceremony-result {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: var(--ceremony-title);
+  background: linear-gradient(0deg, #120d13b8, #120d133d 70%);
+  padding: 24px;
+  text-align: center;
+}
+.ceremony-seal {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #b07862;
+  transform: rotate(45deg);
+  display: grid;
+  place-items: center;
+  margin-bottom: 34px;
+  background: #23111677;
+}
+.ceremony-seal span {
+  transform: rotate(-45deg);
+  color: #d5a087;
+  font:
+    27px Georgia,
+    serif;
+}
+.ceremony-result small {
+  font:
+    10px Arial,
+    sans-serif;
+  letter-spacing: 0.5em;
+  color: #c69581;
+}
+.ceremony-result h2 {
+  margin: 20px 0 24px;
+  font:
+    400 clamp(36px, 7.8vw, 110px)/1.1 Georgia,
+    serif;
+  letter-spacing: 0.14em;
+  padding-left: 0.14em;
+  text-shadow: 0 3px 30px #0009;
+  transform: translateY(calc((1 - var(--ceremony-title)) * 18px));
+}
+.ceremony-result p {
+  font:
+    italic 16px/1.5 Georgia,
+    serif;
+  color: #c4b2a2;
+  margin: 0;
+}
+.ceremony-rule {
+  width: 64px;
+  height: 1px;
+  background: #aa7760;
+  margin: 0 0 24px;
+}
+.ceremony-footer {
+  position: absolute;
+  bottom: 4.5vh;
+  width: 100%;
+  text-align: center;
+  font:
+    10px Arial,
+    sans-serif;
+  letter-spacing: 0.23em;
+  color: #968a7c;
+  opacity: var(--ceremony-in);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ceremony-cut,
+  .ceremony-flash {
+    display: none;
+  }
+  .ceremony-result h2 {
+    transform: none;
+  }
+}
+@media (max-width: 600px) {
+  .ceremony-caption {
+    font-size: 8px;
+    letter-spacing: 0.22em;
+  }
+  .ceremony-caption::before,
+  .ceremony-caption::after {
+    width: 20px;
+    margin: 0 10px;
+  }
+  .ceremony-result h2 {
+    font-size: clamp(28px, 8vw, 46px);
+    letter-spacing: 0.08em;
+  }
+  .ceremony-footer {
+    font-size: 8px;
+    letter-spacing: 0.12em;
+  }
+}

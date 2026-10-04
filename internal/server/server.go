@@ -20,7 +20,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-const ProtocolVersion = 6
+const ProtocolVersion = 7
 
 // BuildRevision is set by the release build to identify the running artifact.
 var BuildRevision = "dev"
@@ -134,6 +134,7 @@ type envelope struct {
 	Input      game.Input `json:"input,omitempty"`
 	Time       float64    `json:"time,omitempty"`
 	Probe      string     `json:"probe,omitempty"`
+	Life       uint64     `json:"life,omitempty"`
 }
 
 func decode(data []byte) (envelope, error) {
@@ -271,6 +272,10 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch e.Type {
+		case "seppuku":
+			if !room.submit(operation{kind: e.Type, peer: p, life: e.Life}) {
+				return
+			}
 		case "add_dummy", "remove_dummies":
 			if !room.submit(operation{kind: e.Type, peer: p}) {
 				return

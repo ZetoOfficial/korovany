@@ -4,6 +4,8 @@ import { ArenaView } from "./render/arena.ts";
 import { Controls } from "./input.ts";
 import { MatchConnection, createRoom } from "./network.ts";
 import { AttackFeedback, Prediction, SnapshotBuffer } from "./simulation.ts";
+import { SeppukuPresentation } from "./seppuku.ts";
+import { roundWinners } from "./results.ts";
 import {
   interpolationTicks,
   rules,
@@ -33,6 +35,8 @@ const prediction = new Prediction(),
   snapshots = new SnapshotBuffer();
 let feedback = new AttackFeedback();
 let displayedView: ViewTime | undefined;
+const seppuku = new SeppukuPresentation();
+let seppukuPending = false;
 
 function animateAttack(life: number, seq: number, weapon: number, now: number) {
   if (feedback.take(life, seq)) view.attack(weapon, now);
@@ -51,17 +55,61 @@ let lastSnapshot = 0,
 let view: ArenaView;
 const feed: { text: string; until: number }[] = [];
 
-const controls = new Controls(canvas, () => setMenu(!menuOpen));
+const controls = new Controls(
+  canvas,
+  () => setMenu(!menuOpen),
+  openSeppukuConfirm,
+);
 
 function setMenu(open: boolean) {
   if (!self) return;
   menuOpen = open;
   pause.hidden = !open;
+  closeSeppukuConfirm();
   controls.setEnabled(!open && online);
   if (open) {
     document.exitPointerLock?.();
     el("resume").focus();
-  } else void controls.capture();
+  } else if ((prediction.player?.health ?? 0) > 0) void controls.capture();
+}
+
+function closeSeppukuConfirm() {
+  el("seppuku-confirm").hidden = true;
+  el("seppuku").setAttribute("aria-expanded", "false");
+}
+
+function openSeppukuConfirm() {
+  updateSeppukuControls();
+  if (
+    el<HTMLButtonElement>("seppuku").disabled ||
+    performance.now() - lastSnapshot > 750
+  )
+    return;
+  if (!menuOpen) setMenu(true);
+  el("seppuku-confirm").hidden = false;
+  el("seppuku").setAttribute("aria-expanded", "true");
+  el("seppuku-cancel").focus();
+}
+
+function updateSeppukuControls() {
+  const player = snapshot?.players.find((p) => p.id === self);
+  const available =
+    online &&
+    snapshot?.phase === "playing" &&
+    !!player &&
+    player.health > 0 &&
+    !player.forfeited;
+  el<HTMLButtonElement>("seppuku").disabled = !available || seppukuPending;
+  el<HTMLButtonElement>("seppuku-accept").disabled =
+    !available || seppukuPending;
+  el("seppuku-hint").textContent = player?.forfeited
+    ? "Раунд сдан. Ты вернёшься в следующей схватке."
+    : snapshot?.phase !== "playing"
+      ? "Доступно после начала схватки."
+      : (player?.health ?? 0) <= 0
+        ? "Доступно после возрождения."
+        : "Автоматическое поражение без возрождения в этом раунде.";
+  if (!available) closeSeppukuConfirm();
 }
 
 function lobbyStatus(message: string, error = false) {
@@ -95,8 +143,13 @@ function leave(message = "Создай комнату или введи код �
   online = false;
   snapshot = null;
   dummyPending = false;
+  seppukuPending = false;
+  seppuku.reset();
+  el("seppuku-status").textContent = "";
+  closeSeppukuConfirm();
   el("dummy-status").textContent = "";
   updateDummyControls();
+  updateSeppukuControls();
   prediction.player = null;
   prediction.pending = [];
   snapshots.clear();
@@ -125,7 +178,9 @@ function receive(next: Snapshot) {
   lastSnapshot = performance.now();
   snapshots.push(next);
   const player = next.players.find((p) => p.id === self);
+  updateSeppukuControls();
   if (player) {
+    const wasForfeited = prediction.player?.forfeited;
     const newLife =
       !prediction.player || player.life !== prediction.player.life;
     prediction.reconcile(
@@ -141,6 +196,14 @@ function receive(next: Snapshot) {
       controls.clear();
       displayedView = undefined;
       view.resetAttack();
+      seppuku.reset();
+      seppukuPending = false;
+      el("seppuku-status").textContent = "";
+    }
+    if (player.forfeited && !wasForfeited) {
+      if (menuOpen) setMenu(false);
+      controls.clear();
+      document.exitPointerLock?.();
     }
     if (
       player.lastAttackSeq &&
@@ -156,6 +219,15 @@ function receive(next: Snapshot) {
   for (const event of next.events) {
     if (event.id <= lastEvent) continue;
     lastEvent = event.id;
+    if (event.type === "seppuku") {
+      const actor =
+        next.players.find((p) => p.id === event.actor)?.name ?? "Боец";
+      feed.push({
+        text: `${actor} · сэппуку · раунд сдан`,
+        until: performance.now() + 6000,
+      });
+      if (feed.length > 3) feed.shift();
+    }
     if (event.type === "hit") {
       view.impact(event, self, performance.now() / 1000);
       if (event.actor === self && event.part) {
@@ -233,8 +305,12 @@ async function join(makeRoom: boolean) {
       snapshot: receive,
       status(message, connected) {
         online = connected;
-        if (!connected) dummyPending = false;
+        if (!connected) {
+          dummyPending = false;
+          seppukuPending = false;
+        }
         updateDummyControls();
+        updateSeppukuControls();
         el("connection").textContent = message;
         controls.setEnabled(connected && !menuOpen);
         if (!connected) controls.clear();
@@ -251,6 +327,12 @@ async function join(makeRoom: boolean) {
         dummyPending = false;
         el("dummy-status").textContent = message;
         updateDummyControls();
+      },
+      seppukuResult(accepted, message) {
+        seppukuPending = false;
+        el("seppuku-status").textContent = message;
+        if (accepted) closeSeppukuConfirm();
+        updateSeppukuControls();
       },
     });
   } catch (error) {
@@ -279,6 +361,21 @@ for (const [id, weapon] of [
   });
 }
 el("resume").addEventListener("click", () => setMenu(false));
+el("seppuku").addEventListener("click", openSeppukuConfirm);
+el("seppuku-cancel").addEventListener("click", () => {
+  closeSeppukuConfirm();
+  el("seppuku").focus();
+});
+el("seppuku-accept").addEventListener("click", () => {
+  const player = snapshot?.players.find((p) => p.id === self);
+  if (!player || seppukuPending) return;
+  if (el<HTMLInputElement>("seppuku-sound").checked) seppuku.unlockAudio();
+  seppukuPending = connection?.seppuku(player.life) ?? false;
+  el("seppuku-status").textContent = seppukuPending
+    ? "Ждём ответ сервера…"
+    : "Нет связи с сервером. Попробуй после подключения.";
+  updateSeppukuControls();
+});
 el("leave").addEventListener("click", () => leave());
 addDummyButton.addEventListener("click", () => manageDummies("add_dummy"));
 removeDummiesButton.addEventListener("click", () =>
@@ -315,7 +412,7 @@ pause.addEventListener("keydown", (event) => {
     ...pause.querySelectorAll<HTMLElement>(
       "button:not(:disabled), input:not(:disabled)",
     ),
-  ];
+  ].filter((element) => element.getClientRects().length > 0);
   if (event.shiftKey && document.activeElement === items[0]) {
     event.preventDefault();
     items.at(-1)?.focus();
@@ -381,13 +478,20 @@ function updateHUD(now: number) {
       : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   let notice = "";
   if (!online || now - lastSnapshot > 750) notice = "Ждём связь с сервером…";
+  else if (player.forfeited && snapshot.phase !== "finished")
+    notice = "Поражение · сэппуку\nТы вернёшься в следующей схватке";
   else if (snapshot.phase === "waiting")
     notice = "Пригласи соперника или добавь манекена: меню · P";
   else if (snapshot.phase === "countdown") notice = `${seconds || 1}`;
   else if (snapshot.phase === "finished") {
-    const ranked = [...snapshot.players].sort((a, b) => b.kills - a.kills);
-    const winners = ranked.filter((p) => p.kills === ranked[0]?.kills);
-    notice = `${winners.length > 1 ? "Ничья" : `${winners[0]?.name} побеждает`}\nСледующая схватка через ${seconds} с`;
+    const winners = roundWinners(snapshot.players);
+    const result =
+      winners.length === 0
+        ? "Схватка окончена"
+        : winners.length > 1
+          ? "Ничья"
+          : `${winners[0].name} побеждает`;
+    notice = `${player.forfeited ? "Поражение · сэппуку\n" : ""}${result}\nСледующая схватка через ${seconds} с`;
   } else if (player.health <= 0)
     notice = `Ты пал\nВозрождение через ${Math.max(1, Math.ceil((player.respawnTick - tick) / rules.tickRate))} с`;
   el("center-notice").textContent = notice;
@@ -397,15 +501,21 @@ function updateHUD(now: number) {
       : "";
   const list = el("players");
   const rows = [...snapshot.players]
-    .sort((a, b) => b.kills - a.kills || a.id.localeCompare(b.id))
+    .sort(
+      (a, b) =>
+        Number(!!a.forfeited) - Number(!!b.forfeited) ||
+        b.kills - a.kills ||
+        a.id.localeCompare(b.id),
+    )
     .map((p) => {
       const row = document.createElement("li");
       row.classList.toggle("you", p.id === self);
       row.classList.toggle("offline", !p.connected);
+      row.classList.toggle("forfeited", !!p.forfeited);
       const name = document.createElement("span"),
         score = document.createElement("small");
       name.textContent = `${p.name}${p.dummy ? ` · ${p.health} HP` : ""}${p.id === self ? " · ты" : ""}${!p.connected ? " · нет связи" : ""}`;
-      score.textContent = `${p.kills} / ${p.deaths}`;
+      score.textContent = p.forfeited ? "СДАЛСЯ" : `${p.kills} / ${p.deaths}`;
       row.append(name, score);
       return row;
     });
@@ -456,6 +566,12 @@ function frame(now: number) {
       Math.min((now - lastSnapshot) / 1000, 0.25) * rules.tickRate
     : 0;
   const rendered = snapshots.sampleView(tick - interpolationTicks);
+  const surrendered = prediction.player?.forfeited;
+  seppuku.update(
+    surrendered ? prediction.player?.seppukuTick : undefined,
+    (tick - (prediction.player?.seppukuTick ?? 0)) / rules.tickRate,
+    el<HTMLInputElement>("seppuku-sound").checked,
+  );
   displayedView = rendered.view;
   view.render(
     prediction.player,
@@ -469,6 +585,7 @@ function frame(now: number) {
     now / 1000,
     controls.enabled && snapshot?.phase === "playing",
     prediction.currentTick,
+    tick,
   );
   const draw = prediction.player?.bowDrawTicks ?? 0;
   el("bow-charge").hidden =

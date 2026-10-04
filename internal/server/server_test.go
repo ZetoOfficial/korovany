@@ -213,6 +213,38 @@ func state(s game.Snapshot, id string) game.Player {
 	return game.Player{}
 }
 
+func TestSeppukuIsAuthoritativeAndVisibleToBothClients(t *testing.T) {
+	h := testServer(t)
+	room := create(t, h)
+	a := dial(t, h, room, "Эльф", "")
+	b := dial(t, h, room, "Страж", "")
+	before := a.until(t, func(s game.Snapshot) bool { return s.Phase == "playing" })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := wsjson.Write(ctx, a.conn, envelope{Type: "seppuku", Life: state(before, a.id).Life}); err != nil {
+		t.Fatal(err)
+	}
+	var start uint64
+	for _, client := range []*testClient{a, b} {
+		s := client.until(t, func(s game.Snapshot) bool { return s.Phase == "finished" })
+		loser, winner := state(s, a.id), state(s, b.id)
+		if !loser.Forfeited || loser.Health != 0 || loser.Deaths != 1 || loser.SeppukuTick == 0 || winner.Forfeited || winner.Kills != 0 {
+			t.Fatalf("incorrect shared round result: %+v", s)
+		}
+		if start != 0 && start != loser.SeppukuTick {
+			t.Fatal("clients received different animation start times")
+		}
+		start = loser.SeppukuTick
+		found := false
+		for _, event := range s.Events {
+			found = found || (event.Type == "seppuku" && event.Actor == a.id)
+		}
+		if !found {
+			t.Fatal("surrender event missing from broadcast")
+		}
+	}
+}
+
 func TestTwoClientsAgreeAndReconnect(t *testing.T) {
 	h := testServer(t)
 	room := create(t, h)
