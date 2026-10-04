@@ -60,6 +60,9 @@ function delivery(delay, jitter, send) {
 async function client(browser, name, rtt, jitter, errors) {
   const context = await browser.newContext({
     viewport: { width: 640, height: 480 },
+    // Measure network behavior without spending the rewind budget on software
+    // rasterization. Multiplayer tests exercise the normal pixel density.
+    deviceScaleFactor: 0.25,
   });
   await context.addInitScript(() => {
     HTMLCanvasElement.prototype.requestPointerLock = () =>
@@ -429,9 +432,16 @@ async function scenario(browser, attackerRTT, targetRTT, jitter) {
     await turn(b, Math.atan2(self.x - target.x, self.z - target.z));
     await sleep(300);
     const previousHits = hits(a, b).length;
+    const beforeFlee = displayed(a.wire, b.wire.id);
     await b.page.keyboard.down("Shift");
     await b.page.keyboard.down("w");
-    await sleep(180);
+    await until(() => {
+      const shown = displayed(a.wire, b.wire.id);
+      return (
+        shown &&
+        Math.hypot(shown.x - beforeFlee.x, shown.z - beforeFlee.z) > 0.15
+      );
+    }, "attacker sees the target begin to flee");
     const previousAttack = stateOf(a, a.wire.id).lastAttackSeq;
     const previousCommand = stateOf(a, a.wire.id).lastCombat?.seq ?? 0;
     await a.page.keyboard.press("e");

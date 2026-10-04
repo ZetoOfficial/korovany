@@ -268,7 +268,7 @@ export class ArenaView {
     if (event.target === self) this.recoilStart = now;
   }
   setQuality(low: boolean) {
-    this.renderer.setPixelRatio(low ? 0.85 : Math.min(devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, low ? 0.85 : 1.5));
     this.renderer.shadowMap.enabled = !low;
   }
 
