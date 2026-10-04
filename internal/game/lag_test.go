@@ -45,111 +45,93 @@ func historicalMatch(t *testing.T, weapon int, rtt float64) (*Match, *Player, *P
 }
 
 func TestHistoricalMovingHitsAtDifferentRTT(t *testing.T) {
-	for _, weapon := range []int{Sword, Bow} {
-		for _, rtt := range []float64{0, .1, .2} {
-			t.Run(fmt.Sprintf("weapon%d/rtt%.0f", weapon, rtt*1000), func(t *testing.T) {
-				m, a, b, input := historicalMatch(t, weapon, rtt)
-				input.Forward, input.Jump = 1, true // The attacker also moves and jumps.
-				x, z := b.X, b.Z
-				m.Input(a.ID, input)
-				m.Step()
-				want := 65.0
-				if weapon == Bow {
-					want = 66
-				}
-				if b.Health != want || b.X != x || b.Z != z || a.LastAttackSeq != input.Seq || a.LastCombat.Outcome != "hit" {
-					t.Fatalf("historical hit failed or moved target: a=%+v b=%+v", a, b)
-				}
-				if a.NextAttackTick <= m.Tick || a.LastCombat.QueueMS <= 0 {
-					t.Fatal("missing cooldown or timing diagnostics")
-				}
-				if m.Input(a.ID, input) {
-					t.Fatal("duplicate accepted")
-				}
-				m.Step()
-				if b.Health != want {
-					t.Fatal("duplicate damage")
-				}
-			})
-		}
+	for _, rtt := range []float64{0, .1, .2} {
+		t.Run(fmt.Sprintf("rtt%.0f", rtt*1000), func(t *testing.T) {
+			m, a, b, input := historicalMatch(t, Sword, rtt)
+			input.Forward, input.Jump = 1, true // The attacker also moves and jumps.
+			x, z := b.X, b.Z
+			m.Input(a.ID, input)
+			m.Step()
+			want := 65.0
+			if b.Health != want || b.X != x || b.Z != z || a.LastAttackSeq != input.Seq || a.LastCombat.Outcome != "hit" {
+				t.Fatalf("historical hit failed or moved target: a=%+v b=%+v", a, b)
+			}
+			if a.NextAttackTick <= m.Tick || a.LastCombat.QueueMS <= 0 {
+				t.Fatal("missing cooldown or timing diagnostics")
+			}
+			if m.Input(a.ID, input) {
+				t.Fatal("duplicate accepted")
+			}
+			m.Step()
+			if b.Health != want {
+				t.Fatal("duplicate damage")
+			}
+		})
 	}
 }
 
 func TestHistoricalDefenseAndLifecycle(t *testing.T) {
-	for _, weapon := range []int{Sword, Bow} {
-		for _, scenario := range []string{"block", "rear-block", "shield", "wall", "target-respawn", "target-reconnect", "target-disconnect", "target-dead", "attacker-reconnect", "jump-miss", "jump-hit"} {
-			t.Run(fmt.Sprintf("%d/%s", weapon, scenario), func(t *testing.T) {
-				m, a, b, input := historicalMatch(t, weapon, .2)
-				want := 100.0
-				for i := range m.history {
-					for j := range m.history[i].players {
-						p := &m.history[i].players[j]
-						if p.ID != b.ID {
-							continue
-						}
-						switch scenario {
-						case "block":
-							p.Blocking, p.Yaw = true, math.Pi
-							want = 91
-						case "rear-block":
-							p.Blocking, p.Yaw = true, 0
-							want = 65
-							if weapon == Bow {
-								want = 66
-							}
-						case "shield":
-							p.ShieldTick = 230 // Expired now, but visible at the attack's time.
-						case "jump-miss", "jump-hit":
-							p.Y = 3
-						}
+	for _, scenario := range []string{"block", "rear-block", "shield", "wall", "target-respawn", "target-reconnect", "target-disconnect", "target-dead", "attacker-reconnect", "jump-miss", "jump-hit"} {
+		t.Run(scenario, func(t *testing.T) {
+			m, a, b, input := historicalMatch(t, Sword, .2)
+			want := 100.0
+			for i := range m.history {
+				for j := range m.history[i].players {
+					p := &m.history[i].players[j]
+					if p.ID != b.ID {
+						continue
 					}
-				}
-				switch scenario {
-				case "wall":
-					m.World.Obstacles = append(m.World.Obstacles, Obstacle{Z: -1, W: 8, D: .1, Height: 10})
-				case "target-respawn":
-					m.respawn(b)
-				case "target-reconnect":
-					m.Disconnect(b.ID)
-					m.Resume(b.ID)
-				case "target-disconnect":
-					m.Disconnect(b.ID)
-					want = 65
-					if weapon == Bow {
-						want = 66
-					}
-				case "target-dead":
-					b.Health = 0
-					b.RespawnTick = 500
-					want = 0
-				case "attacker-reconnect":
-					m.Disconnect(a.ID)
-					m.Resume(a.ID)
-					m.SetLatency(a.ID, .2, 0)
-					input.Life = a.Life
-				case "jump-hit":
-					if weapon == Bow {
-						input.Pitch = math.Atan2(3+1.2-1.8, 20)
-						want = 66
-					} else {
-						a.Y = 2
+					switch scenario {
+					case "block":
+						p.Blocking, p.Yaw = true, math.Pi
+						want = 91
+					case "rear-block":
+						p.Blocking, p.Yaw = true, 0
 						want = 65
+					case "shield":
+						p.ShieldTick = 230 // Expired now, but visible at the attack's time.
+					case "jump-miss", "jump-hit":
+						p.Y = 3
 					}
 				}
-				m.Input(a.ID, input)
-				m.Step()
-				if b.Health != want {
-					t.Fatalf("health=%v want=%v diagnostic=%+v", b.Health, want, a.LastCombat)
-				}
-			})
-		}
+			}
+			switch scenario {
+			case "wall":
+				m.World.Obstacles = append(m.World.Obstacles, Obstacle{Z: -1, W: 8, D: .1, Height: 10})
+			case "target-respawn":
+				m.respawn(b)
+			case "target-reconnect":
+				m.Disconnect(b.ID)
+				m.Resume(b.ID)
+			case "target-disconnect":
+				m.Disconnect(b.ID)
+				want = 65
+			case "target-dead":
+				b.Health = 0
+				b.RespawnTick = 500
+				want = 0
+			case "attacker-reconnect":
+				m.Disconnect(a.ID)
+				m.Resume(a.ID)
+				m.SetLatency(a.ID, .2, 0)
+				input.Life = a.Life
+			case "jump-hit":
+				a.Y = 2
+				want = 65
+			}
+			m.Input(a.ID, input)
+			m.Step()
+			if b.Health != want {
+				t.Fatalf("health=%v want=%v diagnostic=%+v", b.Health, want, a.LastCombat)
+			}
+		})
 	}
 }
 
 func TestInvalidAttackTimeStillMovesPlayer(t *testing.T) {
 	for _, scenario := range []string{"stale", "future", "forged", "missing", "missing-history", "queue", "transport-queue", "bad-pair"} {
 		t.Run(scenario, func(t *testing.T) {
-			m, a, b, input := historicalMatch(t, Bow, .2)
+			m, a, b, input := historicalMatch(t, Sword, .2)
 			input.Forward = 1
 			reason := ""
 			switch scenario {
@@ -193,17 +175,17 @@ func TestInvalidAttackTimeStillMovesPlayer(t *testing.T) {
 }
 
 func TestRewindLimitAndJitter(t *testing.T) {
-	m, a, b, input := historicalMatch(t, Bow, .3)
+	m, a, b, input := historicalMatch(t, Sword, .3)
 	m.Input(a.ID, input)
 	m.Step()
 	if a.LastCombat.Reason != "stale_view" || b.Health != 100 {
 		t.Fatal("300 ms plus interpolation exceeded the cap")
 	}
-	m, a, b, input = historicalMatch(t, Bow, .2)
+	m, a, b, input = historicalMatch(t, Sword, .2)
 	m.SetLatency(a.ID, .16, .02) // Smoothed RTT lags a recent 40 ms spike.
 	m.Input(a.ID, input)
 	m.Step()
-	if b.Health != 66 {
+	if b.Health != 65 {
 		t.Fatalf("jitter within the budget rejected: %+v", a.LastCombat)
 	}
 
@@ -216,7 +198,7 @@ func TestRewindLimitAndJitter(t *testing.T) {
 }
 
 func TestHistoryInterpolatesActualSnapshotPair(t *testing.T) {
-	m, a, b, input := historicalMatch(t, Bow, .175)
+	m, a, b, input := historicalMatch(t, Sword, .175)
 	// The displayed target turns across the -pi/pi boundary between snapshots.
 	for i := range m.history {
 		for j := range m.history[i].players {

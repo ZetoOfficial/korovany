@@ -152,7 +152,6 @@ function receive(next: Snapshot) {
   for (const event of next.events) {
     if (event.id <= lastEvent) continue;
     lastEvent = event.id;
-    if (event.type === "arrow") view.shot(event, self);
     if (event.type === "hit") {
       if (event.actor === self) hitUntil = performance.now() + 170;
       if (event.target === self) damageUntil = performance.now() + 300;
@@ -275,6 +274,9 @@ removeDummiesButton.addEventListener("click", () =>
 el<HTMLInputElement>("low-quality").addEventListener("change", (event) =>
   view.setQuality((event.target as HTMLInputElement).checked),
 );
+el<HTMLInputElement>("trajectory-preview").addEventListener("change", (event) =>
+  view.setTrajectoryPreview((event.target as HTMLInputElement).checked),
+);
 el("copy-room").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(
@@ -321,8 +323,8 @@ function updateHUD(now: number) {
   el("weapon-name").textContent = bow ? "ЛУК" : "КЛИНОК";
   el("weapon-number").textContent = bow ? "02" : "01";
   el("weapon-hint").textContent = bow
-    ? "ЛКМ / F · выстрел · 1 — клинок и блок"
-    : "ЛКМ / F · удар · ПКМ / B · блок";
+    ? "Зажми ЛКМ / E · отпусти — выстрел · ПКМ / Q — отмена"
+    : "ЛКМ / E · удар · ПКМ / Q · блок";
   el("ammo").textContent =
     `Стрелы: ${player.arrows} / ${rules.arrows}${bow && player.arrows === 0 ? " · возьми клинок: 1" : ""}`;
   el("weapon-sword").setAttribute("aria-pressed", String(!bow));
@@ -428,13 +430,31 @@ function frame(now: number) {
   view.render(
     prediction.player,
     rendered.players,
+    rendered.projectiles,
     self,
     rendered.view?.tick ?? tick,
     controls.yaw,
     controls.pitch,
     elapsed,
     now / 1000,
+    controls.enabled && snapshot?.phase === "playing",
   );
+  const draw = prediction.player?.bowDrawTicks ?? 0;
+  el("bow-charge").hidden =
+    !healthy ||
+    menuOpen ||
+    prediction.player?.weapon !== 2 ||
+    prediction.player.health <= 0 ||
+    snapshot?.phase !== "playing";
+  el("bow-charge-fill").style.transform =
+    `scaleX(${draw / rules.bowDrawTicks})`;
+  el("bow-charge").classList.toggle("ready", draw >= rules.bowMinDrawTicks);
+  el("bow-charge-text").textContent =
+    draw >= rules.bowDrawTicks
+      ? "Полное натяжение"
+      : draw > 0
+        ? `Натяжение ${Math.round((draw / rules.bowDrawTicks) * 100)}%`
+        : "Зажми ЛКМ / E";
   el("hit-marker").hidden = now > hitUntil;
   el("damage").style.opacity = now < damageUntil ? "0.6" : "0";
   uiTimer += elapsed;

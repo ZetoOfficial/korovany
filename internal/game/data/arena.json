@@ -1,5 +1,5 @@
 {
-  "version": "tract-2",
+  "version": "tract-3",
   "name": "Схватка на тракте",
   "bounds": { "x": 24, "z": 30 },
   "rules": {
@@ -25,7 +25,13 @@
     "attackRange": 3.2,
     "attackDamage": 35,
     "bowCost": 8,
-    "bowTicks": 45,
+    "bowTicks": 24,
+    "bowDrawTicks": 60,
+    "bowMinDrawTicks": 12,
+    "bowMinSpeed": 14,
+    "bowSpeed": 28,
+    "bowGravity": 12,
+    "bowMinDamage": 14,
     "bowRange": 55,
     "bowDamage": 34,
     "arrows": 20

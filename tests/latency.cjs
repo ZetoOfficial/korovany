@@ -157,19 +157,37 @@ function displayed(wire, targetID, record) {
   };
 }
 
-async function turn(client, yaw) {
+async function turn(client, yaw, pitch = 0) {
   const current = client.wire.input?.yaw ?? client.wire.prediction.player.yaw;
   await client.page.mouse.move(320, 240);
   await client.page.mouse.down({ button: "right" });
-  await client.page.mouse.move(320 + wrap(current - yaw) / 0.0022, 240);
+  await client.page.mouse.move(
+    320 + wrap(current - yaw) / 0.0022,
+    240 - (pitch - (client.wire.input?.pitch ?? 0)) / 0.0022,
+  );
   await client.page.mouse.up({ button: "right" });
 }
 
-async function aim(a, b) {
+async function aim(a, b, bow = false) {
   const target = displayed(a.wire, b.wire.id),
     self = a.wire.prediction.player;
-  if (target && self)
-    await turn(a, Math.atan2(self.x - target.x, self.z - target.z));
+  if (target && self) {
+    const distance = Math.hypot(self.x - target.x, self.z - target.z);
+    const rise = target.y + 1.2 - (self.y + 1.8),
+      speed = 28,
+      gravity = 12;
+    const pitch = bow
+      ? Math.atan(
+          (speed ** 2 -
+            Math.sqrt(
+              speed ** 4 -
+                gravity * (gravity * distance ** 2 + 2 * rise * speed ** 2),
+            )) /
+            (gravity * distance),
+        )
+      : 0;
+    await turn(a, Math.atan2(self.x - target.x, self.z - target.z), pitch);
+  }
 }
 
 const stateOf = (client, id) =>
@@ -210,46 +228,58 @@ async function scenario(browser, targetRTT, jitter) {
       await b.page.locator("#fps").textContent(),
     );
     await a.page.keyboard.press("2");
-    await aim(a, b);
     await until(() => stateOf(a, a.wire.id).weapon === 2, "bow equipped");
-    const p = b.wire.prediction.player,
-      q = a.wire.prediction.player;
-    await turn(b, Math.atan2(p.x - q.x, p.z - q.z));
-    await b.page.keyboard.down("Shift");
+    await aim(a, b, true);
+    await a.page.keyboard.down("e");
+    await until(
+      () => stateOf(a, a.wire.id).bowDrawTicks === 60,
+      "full draw at 200 ms RTT",
+    );
+    assert.equal(stateOf(a, a.wire.id).arrows, 20);
+    assert.equal(hits(a, b).length, 0);
+    await a.page.keyboard.up("e");
+    await until(
+      () => stateOf(a, a.wire.id).arrows === 19,
+      "release launches arrow",
+    );
+    assert.equal(
+      stateOf(a, b.wire.id).health,
+      100,
+      "shot must take time to arrive",
+    );
+    // Start dodging only after launch is observed, even with network delay.
     await b.page.keyboard.down("d");
-    await sleep(350);
-    await aim(a, b);
-    await a.page.keyboard.down("f");
-    const deadline = Date.now() + 3500;
-    while (!hits(a, b).length && Date.now() < deadline) {
-      await aim(a, b);
-      await sleep(35);
-    }
-    await a.page.keyboard.up("f");
+    await sleep(700);
     await b.page.keyboard.up("d");
-    await b.page.keyboard.up("Shift");
-    assert.ok(
-      hits(a, b).length,
-      `moving bow target missed: ${JSON.stringify(stateOf(a, a.wire.id).lastCombat)}`,
+    await until(
+      () => a.wire.state.projectiles.length === 0,
+      "dodged arrow expires",
     );
-    const hit = hits(a, b)[0],
-      record = a.wire.attacks.get(hit.seq);
-    assert.ok(
-      record?.input.view && record.atReceipt,
-      "hit linked to observed input",
+    assert.equal(
+      stateOf(a, b.wire.id).health,
+      100,
+      "current position must beat historical aim",
     );
-    const seen = displayed(a.wire, b.wire.id, record),
-      actual = record.atReceipt.players.find((p) => p.id === b.wire.id);
-    assert.ok(
-      Math.hypot(seen.x - actual.x, seen.z - actual.z) > 0.6,
-      "target moved beyond its hitbox during delivery",
+    await sleep(400);
+    await aim(a, b, true);
+    await a.page.keyboard.down("e");
+    await until(
+      () => stateOf(a, a.wire.id).bowDrawTicks === 60,
+      "second full draw",
+    );
+    await a.page.keyboard.up("e");
+    await until(
+      () => hits(a, b).length === 1,
+      "aimed ballistic shot hits stationary target",
     );
     await sleep(600);
+    assert.equal(stateOf(a, b.wire.id).health, 66);
     assert.equal(stateOf(a, b.wire.id).health, stateOf(b, b.wire.id).health);
+    assert.equal(stateOf(a, a.wire.id).arrows, 18);
     assert.equal(stateOf(a, a.wire.id).arrows, stateOf(b, a.wire.id).arrows);
-    assert.ok(stateOf(a, a.wire.id).arrows < 20);
+    assert.equal(stateOf(a, a.wire.id).lastCombat.rewindMs, 0);
     console.log(
-      `PASS moving bow target at RTT 200/${targetRTT} ms, jitter ±${jitter} ms`,
+      `PASS bow draw, dodge after release and ballistic hit at RTT 200/${targetRTT} ms, jitter +/-${jitter} ms`,
     );
 
     await a.page.keyboard.press("1");
@@ -282,7 +312,7 @@ async function scenario(browser, targetRTT, jitter) {
     await b.page.keyboard.down("Shift");
     await b.page.keyboard.down("w");
     await sleep(180);
-    await a.page.keyboard.press("f");
+    await a.page.keyboard.press("e");
     await until(
       () => hits(a, b).length > previousHits,
       "sword hits displayed fleeing opponent",

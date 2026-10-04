@@ -93,6 +93,10 @@
         <ol id="players"></ol>
       </aside>
       <div id="crosshair" aria-hidden="true">+</div>
+      <div id="bow-charge" hidden aria-label="Натяжение лука">
+        <div class="draw-track"><i id="bow-charge-fill"></i></div>
+        <small id="bow-charge-text">Зажми ЛКМ / E</small>
+      </div>
       <div id="hit-marker" hidden aria-hidden="true">×</div>
       <div id="center-notice" role="status"></div>
       <div id="feed" role="log" aria-label="События матча"></div>
@@ -105,7 +109,7 @@
       <div class="weapon-label">
         <span id="weapon-number">01</span
         ><strong id="weapon-name">КЛИНОК</strong>
-        <small id="weapon-hint">ЛКМ / F · удар · ПКМ / B · блок</small>
+        <small id="weapon-hint">ЛКМ / E · удар · ПКМ / Q · блок</small>
         <small id="ammo">Стрелы: 20 / 20</small>
         <div class="weapon-slots" aria-label="Оружие">
           <button id="weapon-sword" aria-pressed="true">1 · Клинок</button>
@@ -133,6 +137,10 @@
         <button id="resume" class="primary">ВЕРНУТЬСЯ В БОЙ →</button>
         <label class="quality"
           ><input id="low-quality" type="checkbox" /> Лёгкая графика</label
+        >
+        <label class="quality"
+          ><input id="trajectory-preview" type="checkbox" checked /> Траектория
+          лука (тест)</label
         >
         <section class="dummy-controls" aria-labelledby="dummy-title">
           <h3 id="dummy-title">Манекены <span id="dummy-count">0</span></h3>

@@ -51,10 +51,15 @@ func TestDummyCombatAndFixedRespawn(t *testing.T) {
 				damage, cooldown = m.World.Rules.BowDamage, m.World.Rules.BowTicks
 			}
 			for seq := uint64(1); seq <= 3; seq++ {
-				if !m.Input(human.ID, Input{Seq: seq, Weapon: weapon, Attack: true}) {
-					t.Fatal("attack input rejected")
+				if weapon == Bow {
+					fireBow(t, m, human)
+					finishFlight(t, m)
+				} else {
+					if !m.Input(human.ID, Input{Seq: human.lastSeq + 1, Weapon: weapon, Attack: true}) {
+						t.Fatal("attack input rejected")
+					}
+					m.Step()
 				}
-				m.Step()
 				if seq == 1 && dummy.Health != 100-damage {
 					t.Fatalf("dummy did not receive ordinary weapon damage: %+v", dummy)
 				}
@@ -77,8 +82,13 @@ func TestDummyCombatAndFixedRespawn(t *testing.T) {
 			if dummy.Health != 100 || dummy.Life != life+1 || dummy.Motion != spawn || dummy.ShieldTick <= m.Tick {
 				t.Fatalf("dummy did not respawn at its fixed position with protection: %+v", dummy)
 			}
-			m.Input(human.ID, Input{Seq: 4, Weapon: weapon, Attack: true})
-			m.Step()
+			if weapon == Bow {
+				fireBow(t, m, human)
+				finishFlight(t, m)
+			} else {
+				m.Input(human.ID, Input{Seq: human.lastSeq + 1, Weapon: weapon, Attack: true})
+				m.Step()
+			}
 			if dummy.Health != 100 || human.LastCombat.Reason != "shield" {
 				t.Fatal("dummy spawn protection was bypassed")
 			}

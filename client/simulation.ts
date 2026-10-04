@@ -6,6 +6,7 @@ import {
   type Motion,
   type Player,
   type Snapshot,
+  type Projectile,
   type ViewTime,
 } from "./protocol.ts";
 
@@ -82,18 +83,31 @@ export class Prediction {
   private step(input: Input, active: boolean, combat: boolean): boolean {
     this.tick++;
     const p = this.player;
-    if (!p || !active || p.health <= 0) return false;
+    if (!p) return false;
+    if (!active || p.health <= 0) {
+      p.bowDrawTicks = 0;
+      return false;
+    }
     p.weapon = input.weapon;
     move(p, input);
     const cost = p.weapon === 2 ? rules.bowCost : rules.attackCost;
-    if (
-      !combat ||
-      !input.attack ||
-      this.tick < p.nextAttackTick ||
-      p.stamina < cost ||
-      (p.weapon === 2 && p.arrows <= 0)
-    )
-      return false;
+    const available =
+      combat && this.tick >= p.nextAttackTick && p.stamina >= cost;
+    let fire = input.attack;
+    if (p.weapon === 2) {
+      const draw = p.bowDrawTicks;
+      if (!available || input.cancelAttack || p.arrows <= 0) {
+        p.bowDrawTicks = 0;
+        return false;
+      }
+      if (input.attack) {
+        p.bowDrawTicks = Math.min(rules.bowDrawTicks, draw + 1);
+        return false;
+      }
+      p.bowDrawTicks = 0;
+      fire = draw >= rules.bowMinDrawTicks;
+    } else p.bowDrawTicks = 0;
+    if (!available || !fire) return false;
     p.stamina -= cost;
     if (p.weapon === 2) p.arrows--;
     p.attackTick = this.tick;
@@ -161,8 +175,12 @@ export class SnapshotBuffer {
     return this.sampleView(tick).players;
   }
 
-  sampleView(tick: number): { players: Player[]; view?: ViewTime } {
-    if (!this.samples.length) return { players: [] };
+  sampleView(tick: number): {
+    players: Player[];
+    projectiles: Projectile[];
+    view?: ViewTime;
+  } {
+    if (!this.samples.length) return { players: [], projectiles: [] };
     tick = clamp(tick, this.samples[0].tick, this.samples.at(-1)!.tick);
     let before = this.samples[0],
       after = this.samples.at(-1)!;
@@ -197,12 +215,38 @@ export class SnapshotBuffer {
         shieldTick: a.shieldTick,
         weapon: a.weapon,
         attackTick: a.attackTick,
+        bowDrawTicks:
+          a.bowDrawTicks > 0 && b.bowDrawTicks > 0
+            ? a.bowDrawTicks + (b.bowDrawTicks - a.bowDrawTicks) * t
+            : a.bowDrawTicks,
         x: a.x + (b.x - a.x) * t,
         y: a.y + (b.y - a.y) * t,
         z: a.z + (b.z - a.z) * t,
         yaw: a.yaw + wrapAngle(b.yaw - a.yaw) * t,
       };
     });
-    return { players, view: { tick, from: before.tick, to: after.tick } };
+    // Arrows and opponents share the same render time. Integrate the last
+    // known velocity analytically so a curved flight stays smooth at 20 Hz.
+    const dt = (tick - before.tick) / rules.tickRate;
+    const projectiles = before.projectiles.map((arrow) => ({
+      ...arrow,
+      position: {
+        x: arrow.position.x + arrow.velocity.x * dt,
+        y:
+          arrow.position.y +
+          arrow.velocity.y * dt -
+          (rules.bowGravity * dt * dt) / 2,
+        z: arrow.position.z + arrow.velocity.z * dt,
+      },
+      velocity: {
+        ...arrow.velocity,
+        y: arrow.velocity.y - rules.bowGravity * dt,
+      },
+    }));
+    return {
+      players,
+      projectiles,
+      view: { tick, from: before.tick, to: after.tick },
+    };
   }
 }

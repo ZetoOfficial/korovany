@@ -7,7 +7,13 @@ import {
   Prediction,
   SnapshotBuffer,
 } from "../simulation.ts";
-import type { Input, Motion, Player, Snapshot } from "../protocol.ts";
+import {
+  rules,
+  type Input,
+  type Motion,
+  type Player,
+  type Snapshot,
+} from "../protocol.ts";
 
 const input = (fields: Partial<Input> = {}): Input => ({
   weapon: 1,
@@ -25,14 +31,18 @@ const input = (fields: Partial<Input> = {}): Input => ({
 
 test("attack prediction reconciles resources without spending them twice", () => {
   const prediction = new Prediction();
-  prediction.reset(player({ weapon: 2 }), 200);
-  const shot = input({ seq: 1, weapon: 2, attack: true });
+  prediction.reset(player({ weapon: 2, bowDrawTicks: 60 }), 200);
+  const shot = input({ seq: 1, weapon: 2, attack: false });
   assert.equal(prediction.advance(shot, true), true);
   assert.equal(prediction.player!.arrows, 19);
   const stamina = prediction.player!.stamina;
   const cooldown = prediction.player!.nextAttackTick;
   for (let i = 0; i < 3; i++) {
-    prediction.reconcile(player({ weapon: 2, ack: 0 }), true, 200);
+    prediction.reconcile(
+      player({ weapon: 2, bowDrawTicks: 60, ack: 0 }),
+      true,
+      200,
+    );
     assert.equal(prediction.player!.arrows, 19);
     assert.equal(prediction.player!.stamina, stamina);
     assert.equal(prediction.player!.nextAttackTick, cooldown);
@@ -70,8 +80,12 @@ test("cooldown spans weapons; unavailable attacks do not animate", () => {
   assert.equal(prediction.player!.arrows, 20);
   assert.equal(
     prediction.advance(input({ seq: 33, attack: true, weapon: 2 }), true),
-    true,
+    false,
   );
+  assert.equal(prediction.player!.bowDrawTicks, 1);
+  for (let seq = 34; seq <= 92; seq++)
+    prediction.advance(input({ seq, attack: true, weapon: 2 }), true);
+  assert.equal(prediction.advance(input({ seq: 93, weapon: 2 }), true), true);
   assert.equal(prediction.player!.arrows, 19);
   for (const state of [
     { stamina: 0 },
@@ -139,6 +153,7 @@ test("view reports the actual clamped snapshot pair and historical defense", () 
 const player = (fields: Partial<Player> = {}): Player => ({
   weapon: 1,
   arrows: 20,
+  bowDrawTicks: 0,
   id: "1",
   name: "Боец",
   faction: "elf",
@@ -171,6 +186,7 @@ const snapshot = (tick: number, players: Player[]): Snapshot => ({
   endTick: 1000,
   players,
   events: [],
+  projectiles: [],
 });
 
 for (const scenario of cases) {
@@ -239,16 +255,116 @@ test("prediction cannot change health or score, and pauses while dead", () => {
 
 test("bow predicts ammunition and corrects it from the acknowledged state", () => {
   const prediction = new Prediction();
-  prediction.reset(player({ stamina: 80 }));
-  prediction.advance(input({ weapon: 2, block: true, attack: true }), true);
+  prediction.reset(player({ stamina: 80, weapon: 2, bowDrawTicks: 60 }));
+  prediction.advance(input({ weapon: 2, block: true, attack: false }), true);
   assert.equal(prediction.player!.weapon, 2);
   assert.equal(prediction.player!.blocking, false);
   assert.equal(prediction.player!.arrows, 19);
   prediction.reconcile(
-    player({ ack: 1, weapon: 2, arrows: 19, nextAttackTick: 46 }),
+    player({ ack: 1, weapon: 2, arrows: 19, nextAttackTick: 25 }),
     true,
     1,
   );
   assert.equal(prediction.player!.weapon, 2);
   assert.equal(prediction.player!.arrows, 19);
+});
+
+test("bow charges without firing; release, cancel, tap and weapon switch are distinct", () => {
+  const prediction = new Prediction();
+  prediction.reset(player());
+  for (let seq = 1; seq <= 90; seq++) {
+    assert.equal(
+      prediction.advance(input({ seq, weapon: 2, attack: true }), true),
+      false,
+    );
+  }
+  assert.equal(prediction.player!.bowDrawTicks, rules.bowDrawTicks);
+  assert.equal(prediction.player!.arrows, 20);
+  assert.equal(prediction.advance(input({ seq: 91, weapon: 2 }), true), true);
+  assert.equal(prediction.player!.bowDrawTicks, 0);
+  assert.equal(prediction.player!.arrows, 19);
+  assert.equal(prediction.player!.lastAttackSeq, 91);
+  for (const scenario of [
+    "tap",
+    "cancel",
+    "switch",
+    "dead",
+    "phase",
+    "ammo",
+    "stamina",
+  ]) {
+    prediction.reset(
+      player({
+        weapon: 2,
+        bowDrawTicks: scenario === "tap" ? 5 : 60,
+        health: scenario === "dead" ? 0 : 100,
+        arrows: scenario === "ammo" ? 0 : 20,
+        stamina: scenario === "stamina" ? 0 : 100,
+      }),
+    );
+    assert.equal(
+      prediction.advance(
+        input({
+          weapon: scenario === "switch" ? 1 : 2,
+          cancelAttack: scenario === "cancel",
+        }),
+        true,
+        scenario !== "phase",
+      ),
+      false,
+      scenario,
+    );
+    assert.equal(prediction.player!.bowDrawTicks, 0, scenario);
+    assert.equal(
+      prediction.player!.arrows,
+      scenario === "ammo" ? 0 : 20,
+      scenario,
+    );
+  }
+});
+
+test("reconciliation replays a pending release against acknowledged draw time", () => {
+  const prediction = new Prediction();
+  prediction.reset(player({ weapon: 2, bowDrawTicks: 58 }), 100);
+  prediction.advance(input({ seq: 1, weapon: 2, attack: true }), true);
+  prediction.advance(input({ seq: 2, weapon: 2, attack: true }), true);
+  assert.equal(prediction.advance(input({ seq: 3, weapon: 2 }), true), true);
+  prediction.reconcile(
+    player({ ack: 1, weapon: 2, bowDrawTicks: 59 }),
+    true,
+    101,
+  );
+  assert.equal(prediction.player!.arrows, 19);
+  assert.equal(prediction.player!.bowDrawTicks, 0);
+  assert.equal(prediction.player!.lastAttackSeq, 3);
+});
+
+test("projectiles render on the same curved timeline as remote players and disappear on impact", () => {
+  const buffer = new SnapshotBuffer();
+  const a = snapshot(100, [player({ bowDrawTicks: 30 })]);
+  a.projectiles = [
+    {
+      id: 1,
+      actor: "1",
+      life: 1,
+      seq: 7,
+      launchTick: 100,
+      position: { x: 0, y: 1.8, z: 0 },
+      velocity: { x: 0, y: 4, z: -28 },
+    },
+  ];
+  buffer.push(a);
+  buffer.push(snapshot(106, [player({ bowDrawTicks: 36 })]));
+  const frame = buffer.sampleView(103);
+  assert.equal(frame.players[0].bowDrawTicks, 33);
+  assert.ok(Math.abs(frame.projectiles[0].position.z + 1.4) < 1e-9);
+  assert.ok(
+    Math.abs(
+      frame.projectiles[0].position.y - (1.8 + 4 * 0.05 - 6 * 0.05 ** 2),
+    ) < 1e-9,
+  );
+  assert.equal(frame.projectiles[0].velocity.y, 3.4);
+  assert.equal(buffer.sampleView(106).projectiles.length, 0);
+  buffer.clear();
+  assert.equal(buffer.sampleView(107).projectiles.length, 0);
 });

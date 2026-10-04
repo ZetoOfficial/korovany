@@ -20,7 +20,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-const ProtocolVersion = 4
+const ProtocolVersion = 5
 
 // BuildRevision is set by the release build to identify the running artifact.
 var BuildRevision = "dev"

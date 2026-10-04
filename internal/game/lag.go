@@ -28,12 +28,15 @@ type queuedInput struct {
 // advances the simulation faster than one authoritative step per tick.
 func (p *Player) coalesceInputs(tick uint64) {
 	preservedAttack := false
+	previous := Input{Weapon: p.Weapon, Attack: p.BowDrawTicks > 0}
 	for i := 0; i < len(p.queue)-2; {
 		old, next := p.queue[i].Input, p.queue[i+1].Input
 		// Keep the first potentially accepted held attack too, so its sequence
 		// still matches the predicted animation. Subsequent repeats can merge.
-		keepAttack := old.Attack && ((!preservedAttack && tick >= p.NextAttackTick) || !next.Attack || old.Weapon != next.Weapon)
-		if old.Jump || keepAttack || (old.Block && !next.Block) {
+		bowTransition := (old.Weapon == Bow || previous.Weapon == Bow) && (old.Attack != previous.Attack || old.Weapon != previous.Weapon)
+		previous = old
+		keepAttack := old.Weapon != Bow && old.Attack && ((!preservedAttack && tick >= p.NextAttackTick) || !next.Attack || old.Weapon != next.Weapon)
+		if old.Jump || keepAttack || bowTransition || old.CancelAttack || (old.Block && !next.Block) {
 			preservedAttack = preservedAttack || old.Attack
 			i++
 			continue

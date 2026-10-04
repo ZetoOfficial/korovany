@@ -12,6 +12,7 @@ export class Controls {
   private jump = false;
   private drag = false;
   private swing = false;
+  private cancelled = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -38,16 +39,16 @@ export class Controls {
       if (e.code === "Digit1" || e.code === "Numpad1") this.weapon = 1;
       if (e.code === "Digit2" || e.code === "Numpad2") this.weapon = 2;
       if (!e.repeat && e.code === "Space") this.jump = true;
-      if (!e.repeat && e.code === "KeyF") {
+      if (!e.repeat && e.code === "KeyE") {
         this.attack = true;
         this.swing = true;
       }
-      if (e.code === "KeyB") this.block = true;
+      if (e.code === "KeyQ") this.block = true;
     });
     window.addEventListener("keyup", (e) => {
       this.keys.delete(e.code);
-      if (e.code === "KeyF") this.attack = false;
-      if (e.code === "KeyB") this.block = false;
+      if (e.code === "KeyE") this.attack = false;
+      if (e.code === "KeyQ") this.block = false;
     });
     canvas.addEventListener("mousedown", (e) => {
       if (!this.enabled) return;
@@ -87,6 +88,7 @@ export class Controls {
     }
   }
   clear() {
+    this.cancelled = true;
     this.keys.clear();
     this.attack = false;
     this.block = false;
@@ -133,10 +135,12 @@ export class Controls {
         this.enabled &&
         (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")),
       attack: this.enabled && (this.attack || this.swing),
+      cancelAttack: this.cancelled || (this.weapon === 2 && this.block),
       block: this.enabled && this.block && this.weapon === 1,
     };
     this.jump = false;
     this.swing = false;
+    this.cancelled = false;
     return input;
   }
 }

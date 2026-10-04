@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { createHumanoid } from "./characters.ts";
 import { box, shape, coneGeometry, cylinderGeometry } from "./primitives.ts";
-import { rules, world, type Player, type GameEvent } from "../protocol.ts";
-import { createBow } from "./bow.ts";
+import { rules, world, type Player, type Projectile } from "../protocol.ts";
+import { createArrow, createBow, setBowDraw } from "./bow.ts";
+import { BowTrajectory } from "./trajectory.ts";
 
 type Avatar = ReturnType<typeof createHumanoid> & {
   label: THREE.Sprite;
@@ -17,13 +18,9 @@ export class ArenaView {
   private avatars = new Map<string, Avatar>();
   private weapon = new THREE.Group();
   private bow = createBow();
+  private trajectory = new BowTrajectory();
   private shotStart = -10;
-  private trails: { mesh: THREE.Mesh; until: number }[] = [];
-  private trailMaterial = new THREE.MeshBasicMaterial({
-    color: "#ffe4a2",
-    transparent: true,
-    opacity: 0.85,
-  });
+  private arrows = new Map<number, THREE.Group>();
   private swingStart = -10;
   private lookReady = false;
   private smoothPosition = new THREE.Vector3();
@@ -197,6 +194,7 @@ export class ArenaView {
     this.scene.add(trunks, crowns);
     this.camera.rotation.order = "YXZ";
     this.scene.add(this.camera);
+    this.scene.add(this.trajectory.group);
     this.camera.add(this.weapon);
     box(this.weapon, 0.38, -0.36, -0.56, 0.17, 0.35, 0.19, "#ad8b62", false);
     box(this.weapon, 0.38, -0.12, -0.75, 0.055, 0.95, 0.07, "#d6dccb", false);
@@ -223,27 +221,13 @@ export class ArenaView {
   resetAttack() {
     this.swingStart = this.shotStart = -10;
   }
-  shot(event: GameEvent, localID: string) {
-    if (!event.from || !event.to) return;
-    const now = performance.now() / 1000;
-    const start =
-      event.actor === localID
-        ? this.camera.localToWorld(new THREE.Vector3(0.29, -0.17, -0.98))
-        : new THREE.Vector3(event.from.x, event.from.y, event.from.z);
-    const end = new THREE.Vector3(event.to.x, event.to.y, event.to.z);
-    const mesh = new THREE.Mesh(cylinderGeometry, this.trailMaterial);
-    mesh.position.copy(start).lerp(end, 0.5);
-    mesh.scale.set(0.018, start.distanceTo(end), 0.018);
-    mesh.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      end.sub(start).normalize(),
-    );
-    this.scene.add(mesh);
-    this.trails.push({ mesh, until: now + 0.18 });
-  }
   setQuality(low: boolean) {
     this.renderer.setPixelRatio(low ? 0.85 : Math.min(devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = !low;
+  }
+
+  setTrajectoryPreview(enabled: boolean) {
+    this.trajectory.enabled = enabled;
   }
 
   private avatar(player: Player) {
@@ -291,18 +275,42 @@ export class ArenaView {
   render(
     local: Player | null,
     remotes: Player[],
+    projectiles: Projectile[],
     id: string,
     tick: number,
     yaw: number,
     pitch: number,
     dt: number,
     now: number,
+    aiming: boolean,
   ) {
-    this.trails = this.trails.filter((trail) => {
-      if (now < trail.until && local) return true;
-      this.scene.remove(trail.mesh);
-      return false;
-    });
+    const flying = new Set(projectiles.map((arrow) => arrow.id));
+    for (const [key, mesh] of this.arrows) {
+      if (!local || !flying.has(key)) {
+        this.scene.remove(mesh);
+        this.arrows.delete(key);
+      }
+    }
+    if (local)
+      for (const arrow of projectiles) {
+        let mesh = this.arrows.get(arrow.id);
+        if (!mesh) {
+          mesh = createArrow();
+          // A short tail keeps a moving arrow readable against the scenery.
+          box(mesh, 0, 0, 0.8, 0.018, 0.018, 0.65, "#ffe2a2", false);
+          this.scene.add(mesh);
+          this.arrows.set(arrow.id, mesh);
+        }
+        mesh.position.set(arrow.position.x, arrow.position.y, arrow.position.z);
+        mesh.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 0, -1),
+          new THREE.Vector3(
+            arrow.velocity.x,
+            arrow.velocity.y,
+            arrow.velocity.z,
+          ).normalize(),
+        );
+      }
     const present = new Set(
       remotes.filter((p) => p.id !== id).map((p) => p.id),
     );
@@ -311,6 +319,7 @@ export class ArenaView {
         this.scene.remove(avatar.group);
         avatar.label.material.map?.dispose();
         avatar.label.material.dispose();
+        (avatar.bow.getObjectByName("string") as THREE.Line).geometry.dispose();
         avatar.shield.geometry.dispose();
         (avatar.shield.material as THREE.Material).dispose();
         this.avatars.delete(key);
@@ -349,7 +358,9 @@ export class ArenaView {
       if (player.weapon === 2) {
         avatar.parts.arm.rotation.x = -1.15;
         avatar.parts.otherArm.rotation.x = -1.15;
-        avatar.bow.getObjectByName("arrow")!.visible = player.arrows > 0;
+        const charge = player.bowDrawTicks / rules.bowDrawTicks;
+        avatar.parts.arm.rotation.x -= charge * 0.35;
+        setBowDraw(avatar.bow, charge, player.arrows > 0);
       }
       avatar.label.visible = player.health > 0;
       avatar.shield.visible = tick < player.shieldTick && player.health > 0;
@@ -374,7 +385,14 @@ export class ArenaView {
       this.bow.visible = local.health > 0 && local.weapon === 2;
       this.bow.position.z =
         -0.9 + Math.max(0, 1 - (now - this.shotStart) * 5) * 0.13;
-      this.bow.getObjectByName("arrow")!.visible = local.arrows > 0;
+      const charge = local.bowDrawTicks / rules.bowDrawTicks;
+      this.bow.position.x = 0.26 - charge * 0.07;
+      this.bow.rotation.z = -charge * 0.07;
+      setBowDraw(
+        this.bow,
+        charge,
+        local.arrows > 0 && now - this.shotStart > 0.18,
+      );
       const swing = Math.max(0, 1 - (now - this.swingStart) * 3.2);
       this.weapon.rotation.set(
         -Math.sin(swing * Math.PI) * 0.8,
@@ -388,6 +406,7 @@ export class ArenaView {
       this.camera.position.set(Math.sin(now * 0.035) * 14, 15, 25);
       this.camera.lookAt(0, 0, 0);
     }
+    this.trajectory.update(local, yaw, pitch, this.camera, aiming);
     this.renderer.render(this.scene, this.camera);
   }
 }

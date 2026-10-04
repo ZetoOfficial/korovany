@@ -646,3 +646,35 @@ input:focus-visible {
     font-size: 9px;
   }
 }
+
+#bow-charge {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 30px);
+  transform: translateX(-50%);
+  width: 154px;
+  text-align: center;
+  pointer-events: none;
+  color: #e8dcc0;
+  text-shadow: 0 1px 3px #17241a;
+}
+.draw-track {
+  height: 4px;
+  background: #14271bb3;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 7px;
+}
+#bow-charge-fill {
+  display: block;
+  height: 100%;
+  background: #c5b899;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+#bow-charge.ready #bow-charge-fill {
+  background: #f6d488;
+}
+#bow-charge small {
+  font-size: 11px;
+}

@@ -2,7 +2,7 @@ import arena from "../internal/game/data/arena.json";
 
 export const world = arena;
 export const rules = arena.rules;
-export const protocolVersion = 4;
+export const protocolVersion = 5;
 export const stepSeconds = 1 / rules.tickRate;
 export const interpolationTicks = rules.tickRate * 0.1;
 
@@ -26,6 +26,7 @@ export interface Input {
   jump: boolean;
   sprint: boolean;
   attack: boolean;
+  cancelAttack?: boolean;
   block: boolean;
 }
 
@@ -44,7 +45,7 @@ export interface Player extends Motion {
   lastCombat?: {
     tick: number;
     seq: number;
-    outcome: "rejected" | "miss" | "hit";
+    outcome: "rejected" | "miss" | "hit" | "flying";
     reason: string;
     commandAgeMs: number;
     queueMs: number;
@@ -52,6 +53,7 @@ export interface Player extends Motion {
   };
   weapon: 1 | 2;
   arrows: number;
+  bowDrawTicks: number;
   id: string;
   name: string;
   faction: string;
@@ -81,6 +83,20 @@ export interface GameEvent {
   from?: { x: number; y: number; z: number };
   to?: { x: number; y: number; z: number };
 }
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+export interface Projectile {
+  id: number;
+  actor: string;
+  life: number;
+  seq: number;
+  launchTick: number;
+  position: Vec3;
+  velocity: Vec3;
+}
 export interface Snapshot {
   type: "snapshot";
   tick: number;
@@ -88,6 +104,7 @@ export interface Snapshot {
   endTick: number;
   players: Player[];
   events: GameEvent[];
+  projectiles: Projectile[];
 }
 
 export interface Welcome {

@@ -17,7 +17,8 @@ type Rules struct {
 	AttackTicks                                                                    uint64
 	AttackRange, AttackDamage                                                      float64
 	BowCost, BowRange, BowDamage                                                   float64
-	BowTicks                                                                       uint64
+	BowTicks, BowDrawTicks, BowMinDrawTicks                                        uint64
+	BowMinSpeed, BowSpeed, BowGravity, BowMinDamage                                float64
 	Arrows                                                                         int
 }
 
@@ -74,18 +75,19 @@ func (w World) Clear(ax, az, bx, bz float64) bool {
 }
 
 type Input struct {
-	Life    uint64    `json:"life,omitempty"`
-	View    *ViewTime `json:"view,omitempty"`
-	Weapon  int       `json:"weapon,omitempty"`
-	Seq     uint64    `json:"seq"`
-	Forward float64   `json:"forward"`
-	Strafe  float64   `json:"strafe"`
-	Yaw     float64   `json:"yaw"`
-	Pitch   float64   `json:"pitch"`
-	Jump    bool      `json:"jump"`
-	Sprint  bool      `json:"sprint"`
-	Attack  bool      `json:"attack"`
-	Block   bool      `json:"block"`
+	Life         uint64    `json:"life,omitempty"`
+	View         *ViewTime `json:"view,omitempty"`
+	Weapon       int       `json:"weapon,omitempty"`
+	Seq          uint64    `json:"seq"`
+	Forward      float64   `json:"forward"`
+	Strafe       float64   `json:"strafe"`
+	Yaw          float64   `json:"yaw"`
+	Pitch        float64   `json:"pitch"`
+	Jump         bool      `json:"jump"`
+	Sprint       bool      `json:"sprint"`
+	Attack       bool      `json:"attack"`
+	CancelAttack bool      `json:"cancelAttack,omitempty"`
+	Block        bool      `json:"block"`
 }
 
 func (i Input) Valid() bool {

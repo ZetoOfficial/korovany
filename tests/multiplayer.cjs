@@ -3,6 +3,34 @@ const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 const url = process.env.ASTRA_URL || "http://127.0.0.1:8080/";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const ballisticPitch = (a, b) => {
+  const distance = Math.hypot(a.x - b.x, a.z - b.z);
+  const rise = b.y + 1.2 - (a.y + 1.8),
+    speed = 28,
+    gravity = 12;
+  return Math.atan(
+    (speed ** 2 -
+      Math.sqrt(
+        speed ** 4 -
+          gravity * (gravity * distance ** 2 + 2 * rise * speed ** 2),
+      )) /
+      (gravity * distance),
+  );
+};
+async function chargedShot(client, mouse = false) {
+  if (mouse) await client.page.mouse.down();
+  else await client.page.keyboard.down("e");
+  await until(
+    () =>
+      client.wire.state.players.find((p) => p.id === client.wire.id)
+        .bowDrawTicks === 60,
+    "full bow draw",
+  );
+  if (process.env.KOROVANY_SCREENSHOT)
+    await client.page.screenshot({ path: process.env.KOROVANY_SCREENSHOT });
+  if (mouse) await client.page.mouse.up();
+  else await client.page.keyboard.up("e");
+}
 
 async function until(condition, label, timeout = 10000) {
   const deadline = Date.now() + timeout;
@@ -107,7 +135,10 @@ async function until(condition, label, timeout = 10000) {
       Math.sin(archer.yaw - aimYaw),
       Math.cos(archer.yaw - aimYaw),
     );
-    await a.page.mouse.move(480 + Math.round(yawDelta / 0.0022), 360);
+    await a.page.mouse.move(
+      480 + Math.round(yawDelta / 0.0022),
+      360 - Math.round((ballisticPitch(archer, mark) - archer.pitch) / 0.0022),
+    );
     await a.page.mouse.up({ button: "right" });
     await until(
       () =>
@@ -118,8 +149,33 @@ async function until(condition, label, timeout = 10000) {
     );
     if (process.env.KOROVANY_SCREENSHOT)
       await a.page.screenshot({ path: process.env.KOROVANY_SCREENSHOT });
-    await a.page.mouse.down();
-    await a.page.mouse.up();
+    // A tap must not spend ammo; a held button must not auto-fire.
+    await a.page.mouse.click(480, 360);
+    await sleep(250);
+    assert.equal(
+      a.wire.state.players.find((p) => p.id === a.wire.id).arrows,
+      20,
+    );
+    await a.page.keyboard.down("e");
+    await until(
+      () =>
+        a.wire.state.players.find((p) => p.id === a.wire.id).bowDrawTicks >= 20,
+      "draw before menu",
+    );
+    await a.page.keyboard.press("p");
+    await a.page.keyboard.up("e");
+    await a.page.locator("#pause").waitFor({ state: "visible" });
+    await until(
+      () =>
+        a.wire.state.players.find((p) => p.id === a.wire.id).bowDrawTicks === 0,
+      "menu cancels draw",
+    );
+    assert.equal(
+      a.wire.state.players.find((p) => p.id === a.wire.id).arrows,
+      20,
+    );
+    await a.page.locator("#resume").click();
+    await chargedShot(a, true);
     await until(
       () =>
         b.wire.state.players.find((p) => p.id === b.wire.id).health === 66 &&
@@ -192,7 +248,7 @@ async function until(condition, label, timeout = 10000) {
       distance() < 3.2 && Math.abs(angleError()) < 0.85,
       `not aimed at opponent: distance=${distance()}, angle=${angleError()}`,
     );
-    await a.page.keyboard.down("f");
+    await a.page.keyboard.down("e");
     await until(
       () => a.wire.state.players.find((p) => p.id === a.wire.id).kills === 1,
       "server confirms a melee kill",
@@ -201,7 +257,7 @@ async function until(condition, label, timeout = 10000) {
       console.error("Combat state:", fighters());
       throw error;
     });
-    await a.page.keyboard.up("f");
+    await a.page.keyboard.up("e");
     await until(
       () => b.wire.state.players.find((p) => p.id === b.wire.id).health === 0,
       "victim receives authoritative death",
@@ -279,7 +335,11 @@ async function until(condition, label, timeout = 10000) {
     );
     await a.page.mouse.move(480, 360);
     await a.page.mouse.down({ button: "right" });
-    await a.page.mouse.move(480 + Math.round(turnToDummy / 0.0022), 360);
+    await a.page.mouse.move(
+      480 + Math.round(turnToDummy / 0.0022),
+      360 -
+        Math.round((ballisticPitch(trainee, dummy) - trainee.pitch) / 0.0022),
+    );
     await a.page.mouse.up({ button: "right" });
     await until(
       () =>
@@ -288,19 +348,20 @@ async function until(condition, label, timeout = 10000) {
         ) < 0.004,
       "aim reaches the dummy",
     );
-    await a.page.mouse.click(480, 360);
+    await chargedShot(a, true);
     await until(() => dummyState().health === 66, "dummy receives bow damage");
     await a.page.locator("#players").filter({ hasText: "66 HP" }).waitFor();
     assert.equal(dummyState().x, dummy.x);
     assert.equal(dummyState().z, dummy.z);
-    await a.page.keyboard.down("f");
+    await chargedShot(a);
+    await until(() => dummyState().health === 32, "second charged arrow hits");
+    await chargedShot(a);
     await until(
       () =>
         dummyState().health === 0 &&
         a.wire.state.players.find((p) => p.id === a.wire.id).kills === 1,
       "dummy death counts as a kill",
     );
-    await a.page.keyboard.up("f");
     await until(() => dummyState().health === 100, "dummy respawns");
     assert.equal(dummyState().x, dummy.x);
     assert.equal(dummyState().z, dummy.z);
